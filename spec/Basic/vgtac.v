@@ -19,7 +19,10 @@ Require Import Program.
 
 Set Implicit Arguments.
 
-Hint Unfold not iff id.
+Create HintDb zoodb discriminated.
+
+
+#[export] Hint Unfold not iff id : zoodb.
 
 Notation " [ x ] " := (cons x nil) : list_scope.
 Notation " [ x ; .. ; y ] " := (cons x .. (cons y nil) ..) : list_scope.
@@ -51,7 +54,7 @@ Proof. intros []; (reflexivity || discriminate). Qed.
 Lemma vlib__andb_split: forall {b1 b2}, b1 && b2 -> b1 /\ b2.
 Proof. intros [] []; try discriminate; auto. Qed.
 
-Hint Resolve vlib__true_is_true vlib__not_false_is_true.
+#[export] Hint Resolve vlib__true_is_true vlib__not_false_is_true : zoodb.
 
 (* ************************************************************************** *)
 (** * Basic automation tactics *)
@@ -173,7 +176,7 @@ Notation "<< t >>" := (NW (fun _ => t)) (at level 79, no associativity).
 Ltac unnw := unfold NW in *.
 Ltac rednw := red; unnw.
 
-Hint Unfold NW.
+#[local] Hint Unfold NW : vlib.
 
 Ltac get_concl := lazymatch goal with [ |- ?G ] => G end.
 

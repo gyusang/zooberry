@@ -12,6 +12,7 @@ Require Import hpattern vgtac.
 Require Import TStr VocabA DLat.
 Require Import Lia.
 
+Declare Scope interval_scope.
 Delimit Scope interval_scope with itv.
 
 Module Itv <: LAT.
@@ -1217,7 +1218,7 @@ Lemma times_prop_pn :
 Proof.
 i. assert (0 <= - z2)%Z as Hz2'; [lia|clear Hz2].
 apply opp'_itv in Hle2.
-exploit times_prop_pp.
+hexploit times_prop_pp.
 - by apply Hz1.
 - by apply Hle1.
 - by apply Hz2'.

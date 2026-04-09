@@ -112,7 +112,7 @@ Fixpoint strong_le (elt_le : elt -> elt -> bool) m1 m2 :=
 Functional Scheme for_all_ind := Induction for for_all Sort Prop.
 Functional Scheme strong_le_ind := Induction for strong_le Sort Prop.
 
-Hint Unfold print_when_false.
+Hint Unfold print_when_false : zoodb.
 
 Ltac destr :=
   repeat (try apply andb_true_intro; try split);

@@ -52,7 +52,7 @@ Proof.
 destruct s; i.
 - inversion Hs.
 - simpl in Hs. inversion Hs.
-  apply plus_is_O in H0. destruct H0 as [Hs1 Hs2].
+  apply Nat.eq_add_0 in H0. destruct H0 as [Hs1 Hs2].
   apply mset_raw_cardinal_zero in Hs1.
   apply mset_raw_cardinal_zero in Hs2. subst.
   simpl in Hse. inversion Hse. subst. by auto.

@@ -14,6 +14,7 @@ Require Import ZArith.
 Require Import hpattern vgtac.
 Require Import TStr.
 Require Import Lia.
+Declare Scope sumbool.
 
 Notation "A &&& B" := (sumbool_and _ _ _ _ A B)
                         (at level 80, right associativity) : sumbool.
