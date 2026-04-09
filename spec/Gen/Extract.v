@@ -7,19 +7,19 @@ Set Implicit Arguments.
 
 Require Vali.
 
-Extract Inductive unit => "unit" [ "()" ].
-Extract Inductive bool => "bool" [ "true" "false" ].
-Extract Inductive sumbool => "bool" [ "true" "false" ].
-Extract Inductive list => "list" [ "[]" "(::)" ].
-Extract Inductive prod => "(*)"  [ "(,)" ].
-Extract Inductive nat => int [ "0" "Pervasives.succ" ]
-  "(fun fO fS n -> if n=0 then fO () else fS (n-1))".
-Extraction Blacklist String List Nat.
-Require Import ExtrOcamlZInt.
+Require Coq.extraction.Extraction.
+Extraction Language OCaml.
+
+Require Import ExtrOcamlBasic.
 Require Import ExtrOcamlString.
+Require Import ExtrOcamlNatInt.
+Require Import ExtrOcamlZInt.
+
+Extraction Blacklist String List Nat.
 
 Global Set Warnings "-extraction-opaque-accessed".
 Global Set Warnings "-extraction-reserved-identifier".
 Global Set Warnings "-extraction-logical-axiom".
 
+(* Separate Extraction Vali. *)
 Recursive Extraction Library Vali.

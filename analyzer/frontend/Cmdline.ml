@@ -54,7 +54,7 @@ let args f =
 let parseOneFile fname =
   if !Cilutil.printStages then E.log "Parsing %s\n" fname;
   let cil = F.parse fname () in
-  if not !Epicenter.doEpicenter then Rmtmps.removeUnusedTemps cil;
+  Rmtmps.removeUnusedTemps cil;
   cil
 
 let frontend () =

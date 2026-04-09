@@ -9,3 +9,8 @@ _build
 *.bbl
 *.blg
 *.out
+_opam/
+*.vok
+*.vos
+.lia.cache
+.Makefile.coq.d

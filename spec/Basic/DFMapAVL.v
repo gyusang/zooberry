@@ -141,8 +141,15 @@ Lemma for_all_1 (print2 : key -> elt -> unit) (cond : key -> elt -> bool)
   (forall k v (Hmaps : Raw.MapsTo k v m), cond k v = true)
   -> for_all print2 cond m = true.
 Proof.
-  functional induction (for_all print2 cond m); auto; intros.
-  destr; auto. autounfold; auto.
+  induction m as [|l IHl x d r IHr h]; intro Hmaps; auto.
+  simpl. apply andb_true_intro; split.
+  - apply andb_true_intro; split.
+    + apply IHl. intros k v Hleft.
+      apply Hmaps. now apply Raw.MapsLeft.
+    + unfold print_when_false.
+      apply Hmaps. now apply Raw.MapsRoot.
+  - apply IHr. intros k v Hright.
+    apply Hmaps. now apply Raw.MapsRight.
 Qed.
 
 Lemma for_all_2 (print2 : key -> elt -> unit) (cond : key -> elt -> bool)
@@ -162,15 +169,15 @@ Lemma for_all_2' (print2 : key -> elt -> unit) (cond : key -> elt -> bool)
   for_all print2 cond m = false
   -> exists k v, Raw.MapsTo k v m /\ cond k v = false.
 Proof.
-functional induction (for_all print2 cond m); [discriminate|].
-unfold print_when_false; intros conds.
-apply Bool.andb_false_iff in conds; destruct conds
-; [apply Bool.andb_false_iff in H; destruct H|].
-- destruct (IHb H) as [k [v [Hmaps Hfalse]]].
-  exists k; exists v; auto.
-- exists x; exists d; auto.
-- destruct (IHb0 H) as [k [v [Hmaps Hfalse]]].
-  exists k; exists v; auto.
+  induction m as [|l IHl x d r IHr h]; [discriminate|].
+  simpl. unfold print_when_false. intros Hfalse.
+  apply Bool.andb_false_iff in Hfalse as [Hfalse | Hfalse].
+  - apply Bool.andb_false_iff in Hfalse as [Hfalse | Hfalse].
+    + destruct (IHl Hfalse) as [k [v [Hmaps Hcond_false]]].
+      exists k, v. split; [now apply Raw.MapsLeft | exact Hcond_false].
+    + exists x, d. split; [now apply Raw.MapsRoot | exact Hfalse].
+  - destruct (IHr Hfalse) as [k [v [Hmaps Hcond_false]]].
+    exists k, v. split; [now apply Raw.MapsRight | exact Hcond_false].
 Qed.
 
 Lemma strong_le_1 (elt_le : elt -> elt -> bool)

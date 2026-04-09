@@ -75,7 +75,7 @@ Proof. i; apply eq'_refl. Qed.
 Lemma eq_sym : forall x y : t, eq x y -> eq y x.
 Proof.
 unfold eq. induction 1; [by econs|by econs|].
-econs; auto.
+econs; auto using A.eq_sym.
 Qed.
 
 Lemma eq_trans : forall x y z : t, eq x y -> eq y z -> eq x z.
@@ -95,9 +95,9 @@ Proof.
 unfold lt. i; depgen z; induction H; [inversion 1; by econs| |].
 + inversion 1; subst.
   - apply lt_cons1; [eauto using A.eq_trans|]; by apply IHlt'.
-  - apply lt_cons2; by eauto using F.lt_eq.
+  - apply lt_cons2; by eauto using F.lt_eq, F.eq_lt.
 + inversion 1; subst.
-  - apply lt_cons2; by eauto using F.eq_lt.
+  - apply lt_cons2; by eauto using F.eq_lt, F.lt_eq.
   - apply lt_cons2; by eauto using A.lt_trans.
 Qed.
 

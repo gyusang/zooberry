@@ -11,6 +11,7 @@ Require Import ZArith OrderedType OrderedTypeEx.
 Require Import hpattern vgtac.
 Require Import VocabA DFSetAVL DFMapAVL TStr.
 Require Import Syn.
+Require Import Lia.
 
 Local Open Scope bool.
 
@@ -44,9 +45,9 @@ Lemma eq_trans : forall x y z : t, eq x y -> eq y z -> eq x z.
 Proof. inversion 1; inversion 1; by econs. Qed.
 
 Lemma lt_trans : forall x y z : t, lt x y -> lt y z -> lt x z.
-Proof. inversion 1; inversion 1; econs; omega. Qed.
+Proof. inversion 1; inversion 1; econs; lia. Qed.
 Lemma lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
-Proof. inversion 1; inversion 1; omega. Qed.
+Proof. inversion 1; inversion 1; lia. Qed.
 
 Definition compare (x y : t) : Compare lt eq x y.
   refine match x, y with
@@ -80,7 +81,7 @@ Proof.
                  | Entry, Entry => left _
                  | Exit, Exit => left _
                  | Node i, Node j =>
-                   match Z_eq_dec i j with
+                   match Z.eq_dec i j with
                      | left _ => left _
                      | right _ => right _
                    end

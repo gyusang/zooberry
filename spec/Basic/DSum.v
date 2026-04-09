@@ -36,11 +36,11 @@ Inductive lt' : t -> t -> Prop :=
 Definition lt : t -> t -> Prop := lt'.
 
 Lemma eq_refl : forall x : t, eq x x.
-Proof. destruct x; econs; auto. Qed.
+Proof. destruct x; econs; auto using A.eq_refl, B.eq_refl. Qed.
 Lemma eq_sym : forall x y : t, eq x y -> eq y x.
-Proof. inversion 1; econs; auto. Qed.
+Proof. inversion 1; econs; auto using A.eq_sym, B.eq_sym. Qed.
 Lemma eq_trans : forall x y z : t, eq x y -> eq y z -> eq x z.
-Proof. inversion 1; inversion 1; econs; eauto. Qed.
+Proof. inversion 1; inversion 1; econs; eauto using A.eq_trans, B.eq_trans. Qed.
 
 Definition zb_eq : zb_equiv eq :=
   {| zb_equiv_refl := eq_refl
@@ -48,7 +48,7 @@ Definition zb_eq : zb_equiv eq :=
    ; zb_equiv_trans := eq_trans |}.
 
 Lemma lt_trans : forall x y z : t, lt x y -> lt y z -> lt x z.
-Proof. inversion 1; inversion 1; econs; eauto. Qed.
+Proof. inversion 1; inversion 1; econs; eauto using A.lt_trans, B.lt_trans. Qed.
 Lemma lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
 Proof.
 inversion 1; inversion 1; [eapply A.lt_not_eq|eapply B.lt_not_eq]; eauto.

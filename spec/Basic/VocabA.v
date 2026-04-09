@@ -13,6 +13,7 @@ Require List.
 Require Import ZArith.
 Require Import hpattern vgtac.
 Require Import TStr.
+Require Import Lia.
 
 Notation "A &&& B" := (sumbool_and _ _ _ _ A B)
                         (at level 80, right associativity) : sumbool.
@@ -127,19 +128,19 @@ Lemma c_div_monotone :
   forall l u (Hlu : (l <= u)%Z) x (Hx : (0 <= x)%Z), (c_div l x <= c_div u x)%Z.
 Proof.
 i. unfold c_div.
-destruct (Z_eq_dec x 0); [|assert (0 < x)%Z as Hx'; [omega|]]; subst.
+destruct (Z.eq_dec x 0); [|assert (0 < x)%Z as Hx'; [lia|]]; subst.
 - do 4 rewrite Zdiv_0_r; s.
   destruct (Z_ge_dec l 0); destruct (Z_ge_dec u 0); by auto.
 - destruct (Z_ge_dec l 0).
-  + destruct (Z_ge_dec u 0); [|omega].
-    apply Z_div_le; omega.
+  + destruct (Z_ge_dec u 0); [|lia].
+    apply Z_div_le; lia.
   + destruct (Z_ge_dec u 0).
     * apply Z.le_trans with 0%Z.
       { apply Z.opp_le_mono; rewrite Z.opp_involutive; s.
-        apply Z_div_pos; omega. }
-      { apply Z_div_pos; omega. }
+        apply Z_div_pos; lia. }
+      { apply Z_div_pos; lia. }
     * apply Z.opp_le_mono. do 2 rewrite Z.opp_involutive.
-      apply Z_div_le; omega.
+      apply Z_div_le; lia.
 Qed.
 
 Lemma list_fold_mor T (t_eq : T -> T -> Prop) U :

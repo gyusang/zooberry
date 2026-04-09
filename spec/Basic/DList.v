@@ -67,9 +67,9 @@ Proof.
 i; depgen z; induction H; [inversion 1; by econs| |].
 + inversion 1; subst.
   - apply lt_cons1; [eauto using A.eq_trans|]; by apply IHlt'.
-  - apply lt_cons2; by eauto using F.lt_eq.
+  - apply lt_cons2; eauto using F.lt_eq, F.eq_lt.
 + inversion 1; subst.
-  - apply lt_cons2; by eauto using F.eq_lt.
+  - apply lt_cons2;  eauto using F.lt_eq, F.eq_lt.
   - apply lt_cons2; by eauto using A.lt_trans.
 Qed.
 

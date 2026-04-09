@@ -17,6 +17,7 @@ Require Import VocabA.
 Require Import vgtac.
 Require Import Monad.
 Require Import Fold.
+Require Import Lia.
 
 Include Input.
 Include GenFunc.Make.
@@ -241,7 +242,7 @@ Lemma fields_g_nil :
     f = DomCon.Fields.nil.
 Proof.
 intros. eapply fields_g_nil'; [|by apply Hf].
-unfold DNList.size. omega.
+unfold DNList.size. lia.
 Qed.
 
 Lemma prop_approx_one_loc :
@@ -289,9 +290,9 @@ destruct 1; constructor.
 - by apply Itv.cor_itv_top.
 - by apply Itv.cor_of_int.
 - by apply Itv.cor_of_int.
-- unfold Itv.of_ints. destruct (Z_le_dec lb ub); [constructor|omega].
-  + constructor; omega.
-  + constructor; omega.
+- unfold Itv.of_ints. destruct (Z_le_dec lb ub); [constructor|lia].
+  + constructor; lia.
+  + constructor; lia.
 - by apply Itv.cor_itv_top.
 Qed.
 
@@ -342,7 +343,7 @@ Proof.
 inversion 2; subst. s; i.
 exploit Itv.gamma_mor; [reflexivity|by apply FH|by apply Hz|].
 inversion 1; subst.
-elim Ht. inversion Hle1; inversion Hle2. omega.
+elim Ht. inversion Hle1; inversion Hle2. lia.
 Qed.
 
 Local Open Scope sumbool.
@@ -505,13 +506,13 @@ by apply Itv.cor_lt0 with (z1:=z1) (z2:=z2).
 i. unfold SemEval.eval_bop. constructor.
 inversion_clear Habs1; inversion_clear Habs2.
 unfold Itv.gt_itv.
-apply Itv.cor_lt1 with (z1:=z2) (z2:=z1); [omega|by auto|by auto].
+apply Itv.cor_lt1 with (z1:=z2) (z2:=z1); [lia|by auto|by auto].
 }
 {                               (* Gt *)
 i. unfold SemEval.eval_bop. constructor.
 inversion_clear Habs1; inversion_clear Habs2.
 unfold Itv.gt_itv.
-apply Itv.cor_lt0 with (z1:=z2) (z2:=z1); [intro; elim Hle; omega|by auto|by auto].
+apply Itv.cor_lt0 with (z1:=z2) (z2:=z1); [intro; elim Hle; lia|by auto|by auto].
 }
 {                               (* Le *)
 i. unfold SemEval.eval_bop. constructor.
@@ -527,13 +528,13 @@ apply Itv.cor_le0 with (z1:=z1) (z2:=z2); by auto.
 i. unfold SemEval.eval_bop. constructor.
 inversion_clear Habs1; inversion_clear Habs2.
 unfold Itv.ge_itv.
-apply Itv.cor_le1 with (z1:=z2) (z2:=z1); [omega|by auto|by auto].
+apply Itv.cor_le1 with (z1:=z2) (z2:=z1); [lia|by auto|by auto].
 }
 {                               (* Ge *)
 i. unfold SemEval.eval_bop. constructor.
 inversion_clear Habs1; inversion_clear Habs2.
 unfold Itv.ge_itv.
-apply Itv.cor_le0 with (z1:=z2) (z2:=z1); [intro; elim Hlt; omega|by auto|by auto].
+apply Itv.cor_le0 with (z1:=z2) (z2:=z1); [intro; elim Hlt; lia|by auto|by auto].
 }
 {                               (* Eq *)
 i. unfold SemEval.eval_bop. constructor.
@@ -926,13 +927,13 @@ induction s.
 - i; inversion_clear Hinit; subst.
   eapply cor_wupdate; [| |by apply Hmem_g|reflexivity|reflexivity].
   + apply DomBasic.PowLoc.singleton_1; by apply Loc.eq_refl.
-  + constructor; constructor; [constructor; omega|by constructor].
+  + constructor; constructor; [constructor; lia|by constructor].
 - i; inversion Hinit; subst. inversion Hl; subst.
   eapply mem_g_mor; [reflexivity|by apply mem_wupdate_double|].
   eapply IHs; [reflexivity|by apply Htl|].
   eapply cor_wupdate; [| |by apply Hmem_g|reflexivity|reflexivity].
   + apply DomBasic.PowLoc.singleton_1; by apply Loc.eq_refl.
-  + constructor; constructor; [constructor; omega|by constructor].
+  + constructor; constructor; [constructor; lia|by constructor].
 Qed.
 
 Lemma cor_eval_string_loc :
@@ -1007,7 +1008,7 @@ Lemma cor_minus'_one :
 Proof.
 inversion 2; subst; simpl Itv.minus'_one.
 - by constructor.
-- constructor; omega.
+- constructor; lia.
 Qed.
 
 Lemma cor_plus'_one :
@@ -1016,7 +1017,7 @@ Lemma cor_plus'_one :
 Proof.
 inversion 2; subst; simpl Itv.plus'_one.
 - by constructor.
-- constructor; omega.
+- constructor; lia.
 Qed.
 
 Lemma Itv_eq_min :
@@ -1082,7 +1083,7 @@ i; inversion Hb; subst
 - apply cor_gen_itv.
   + apply Itv.max'3.
     * by auto.
-    * eapply cor_plus'_one with z2; [omega|by auto].
+    * eapply cor_plus'_one with z2; [lia|by auto].
   + by auto.
   + intro Hpinf; apply Itv_eq_max in Hpinf; elim Hpinf
     ; [by auto|intro Hpinf'; by apply Itv_eq_max_pinf in Hpinf'].
@@ -1097,7 +1098,7 @@ i; inversion Hb; subst
 - apply cor_gen_itv.
   + apply Itv.max'3.
     * by auto.
-    * apply Itv.le'_trans with (Itv.Int z2); [by auto|constructor; omega].
+    * apply Itv.le'_trans with (Itv.Int z2); [by auto|constructor; lia].
   + by auto.
   + intro Hpinf; apply Itv_eq_max in Hpinf; elim Hpinf; by auto.
   + by auto.

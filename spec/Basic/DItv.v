@@ -10,6 +10,7 @@ Set Implicit Arguments.
 Require Import Morphisms ZArith.
 Require Import hpattern vgtac.
 Require Import TStr VocabA DLat.
+Require Import Lia.
 
 Delimit Scope interval_scope with itv.
 
@@ -61,7 +62,7 @@ refine (match x, y with
           | MInf, MInf => left _
           | PInf, PInf => left _
           | Int i, Int j =>
-            match Z_eq_dec i j with
+            match Z.eq_dec i j with
               | left H => left _
               | right H => right _
             end
@@ -75,7 +76,7 @@ Defined.
 Lemma le'_refl : forall (x y : t') (Heq : eq' x y), le' x y.
 Proof.
 i. rewrite Heq. destruct y.
-- apply le'_int; omega.
+- apply le'_int; lia.
 - by apply le'_pinf.
 - by apply le'_minf.
 Qed.
@@ -86,17 +87,17 @@ Proof.
 destruct 1; inversion 1.
 - by auto.
 - by auto.
-- assert (i = j); [omega|by subst].
+- assert (i = j); [lia|by subst].
 Qed.
 
 Lemma le'_trans :
   forall (x y z : t') (le1 : le' x y) (le2 : le' y z), le' x z.
-Proof. destruct 1; inversion 1; auto using le'. apply le'_int; omega. Qed.
+Proof. destruct 1; inversion 1; auto using le'. apply le'_int; lia. Qed.
 
 Lemma le'_neg : forall x y (Hle : ~ le' x y), le' y x.
 Proof.
 destruct x, y; try constructor.
-- destruct (Z_le_dec i i0); [elim Hle; by constructor|omega].
+- destruct (Z_le_dec i i0); [elim Hle; by constructor|lia].
 - i. elim Hle; by constructor.
 - i. elim Hle; by constructor.
 - i. elim Hle; by constructor.
@@ -105,8 +106,8 @@ Qed.
 Ltac le'_auto :=
 repeat match goal with
          | |- context [le'_dec ?x ?y] => destruct (le'_dec x y)
-         | |- le' _ _ => econs; omega
-         | H : ~ le' _ _ |- _ => elim H; econs; omega
+         | |- le' _ _ => econs; lia
+         | H : ~ le' _ _ |- _ => elim H; econs; lia
          | H : le' _ _ |- _ => by inv H
          | |- _ => done
        end.
@@ -138,7 +139,7 @@ repeat match goal with
 
 Lemma opp'_le' : forall x y (Hle : le' x y), le' (opp' y) (opp' x).
 Proof.
-inversion 1; subst; [by constructor|by constructor|constructor; omega].
+inversion 1; subst; [by constructor|by constructor|constructor; lia].
 Qed.
 
 Lemma opp'_le'_zero : forall x (Hle : le' x (Int 0)), le' (Int 0) (opp' x).
@@ -185,7 +186,7 @@ destruct x, y; intros
 ; try (elim H; by constructor)
 ; try (by constructor).
 + destruct (Z_le_dec i0 i); [constructor; auto|].
-  elim H; constructor; omega.
+  elim H; constructor; lia.
 Qed.
 
 Lemma min'_comm_sub : forall x y, le' (min' x y) (min' y x).
@@ -321,7 +322,7 @@ i. inversion Hle1; inversion Hle2; subst.
 - by constructor.
 - by constructor.
 - by constructor.
-- constructor; omega.
+- constructor; lia.
 Qed.
 
 Lemma cor_plus'_ub :
@@ -334,7 +335,7 @@ i. inversion Hle1; inversion Hle2; subst.
 - by constructor.
 - by constructor.
 - by constructor.
-- constructor; omega.
+- constructor; lia.
 Qed.
 
 Definition minus' (x y : t')
@@ -391,7 +392,7 @@ i. inversion Hle1; inversion Hle2; subst.
 - by constructor.
 - by constructor.
 - by constructor.
-- constructor; omega.
+- constructor; lia.
 Qed.
 
 Lemma cor_minus'_ub :
@@ -404,7 +405,7 @@ i. inversion Hle1; inversion Hle2; subst.
 - by constructor.
 - by constructor.
 - by constructor.
-- constructor; omega.
+- constructor; lia.
 Qed.
 
 Definition times' (x y : t') : t' :=
@@ -441,19 +442,19 @@ Proof.
 destruct x, y; try constructor.
 - s. rewrite Z.mul_opp_l. by constructor.
 - s. dest_if_dec.
-  + dest_if_dec; [omega|].
-    dest_if_dec; omega.
+  + dest_if_dec; [lia|].
+    dest_if_dec; lia.
   + dest_if_dec.
-    * dest_if_dec; omega.
-    * dest_if_dec; [omega|].
-      dest_if_dec; omega.
+    * dest_if_dec; lia.
+    * dest_if_dec; [lia|].
+      dest_if_dec; lia.
 - s. dest_if_dec.
-  + dest_if_dec; [omega|].
-    dest_if_dec; omega.
+  + dest_if_dec; [lia|].
+    dest_if_dec; lia.
   + dest_if_dec.
-    * dest_if_dec; omega.
-    * dest_if_dec; [omega|].
-      dest_if_dec; omega.
+    * dest_if_dec; lia.
+    * dest_if_dec; [lia|].
+      dest_if_dec; lia.
 - s. dest_if_dec.
   dest_if_dec; by constructor.
 - s. dest_if_dec.
@@ -496,18 +497,18 @@ inversion 1; subst.
   + by constructor.
   + s. dest_if_dec; [by constructor|].
     dest_if_dec.
-    * dest_if_dec; [omega|].
-      dest_if_dec; [by constructor|omega].
-    * dest_if_dec; [omega|].
+    * dest_if_dec; [lia|].
+      dest_if_dec; [by constructor|lia].
+    * dest_if_dec; [lia|].
       dest_if_dec; by constructor.
 - inversion 1; subst.
-  + s. dest_if_dec; [omega|].
+  + s. dest_if_dec; [lia|].
     dest_if_dec; [by constructor|].
-    assert (j = 0%Z); [omega|subst].
+    assert (j = 0%Z); [lia|subst].
     by apply le'_refl, eq'_sym, times'_zero1.
-  + s. dest_if_dec; [omega|].
+  + s. dest_if_dec; [lia|].
     dest_if_dec; [by constructor|].
-    assert (j = 0%Z); [omega|subst].
+    assert (j = 0%Z); [lia|subst].
     by apply le'_refl, times'_zero1.
   + s. constructor. by apply Zmult_le_compat_r.
 Qed.
@@ -540,11 +541,11 @@ inversion 1; subst.
 - inversion 1; inversion 1; subst.
   + s; i. destruct u; s; by apply le'_refl, eq'_refl.
   + s; i. dest_if_dec; [by constructor|].
-    elim Hlex1'. assert (j = 0)%Z; [omega|subst; by apply eq'_refl].
+    elim Hlex1'. assert (j = 0)%Z; [lia|subst; by apply eq'_refl].
 - inversion 1; inversion 1; subst.
   + s; i. destruct l; s; by apply le'_refl, eq'_refl.
   + s; i. dest_if_dec; [by constructor|].
-    elim Hlex1'. assert (j = 0)%Z; [omega|subst; by apply eq'_refl].
+    elim Hlex1'. assert (j = 0)%Z; [lia|subst; by apply eq'_refl].
 - inversion 1; inversion 1; subst.
   + s; i. by apply le'_refl, eq'_refl.
   + s; i. constructor. by apply c_div_monotone.
@@ -797,7 +798,7 @@ Qed.
 
 Definition of_int (i : Z) : t.
 refine (@V (Int i) (Int i) _ _ _); try inversion 1.
-econs; omega.
+econs; lia.
 Defined.
 
 Lemma cor_of_int : forall z, gamma z (of_int z).
@@ -822,7 +823,7 @@ Definition zero : t := of_int 0.
 Definition false_itv : t := zero.
 
 Lemma false_itv_prop : gamma 0 false_itv.
-Proof. constructor; constructor; omega. Qed.
+Proof. constructor; constructor; lia. Qed.
 
 Lemma false_itv1 : forall i (Hi : gamma 0 i), le false_itv i.
 Proof. inversion 1; subst. by constructor. Qed.
@@ -830,15 +831,15 @@ Proof. inversion 1; subst. by constructor. Qed.
 Definition true_itv : t := of_int 1.
 
 Lemma true_itv_prop : gamma 1 true_itv.
-Proof. constructor; constructor; omega. Qed.
+Proof. constructor; constructor; lia. Qed.
 
 Definition unknown_bool : t := of_ints 0 1.
 
 Lemma unknown_bool_prop0 : gamma 0 unknown_bool.
-Proof. constructor; constructor; omega. Qed.
+Proof. constructor; constructor; lia. Qed.
 
 Lemma unknown_bool_prop1 : gamma 1 unknown_bool.
-Proof. constructor; constructor; omega. Qed.
+Proof. constructor; constructor; lia. Qed.
 
 Definition pos : t := of_lb 1.
 Definition neg : t := of_ub (-1).
@@ -1025,7 +1026,7 @@ refine (match x as x', y as y' return x = x' -> y = y' -> t with
   try (by constructor); try (by elim lb_c1); try (by elim lb_c2).
   destruct u1, u2; s;
   try (by constructor); try (by elim ub_c1); try (by elim ub_c2).
-  constructor; inversion le1; inversion le2; omega.
+  constructor; inversion le1; inversion le2; lia.
 Defined.
 
 Lemma plus_mor : Proper (eq ==> eq ==> eq) plus.
@@ -1072,7 +1073,7 @@ refine (match x as x', y as y' return x = x' -> y = y' -> t with
   destruct u1, l2; s;
   try (by constructor); try (by elim ub_c1); try (by elim lb_c2)
   ; try (by inversion 1).
-  constructor; inversion le1; inversion le2; omega.
+  constructor; inversion le1; inversion le2; lia.
 Defined.
 
 Lemma minus_mor : Proper (eq ==> eq ==> eq) minus.
@@ -1214,7 +1215,7 @@ Lemma times_prop_pn :
     le' (min4' x1 x2 x3 x4) (Int (z1 * z2))
     /\ le' (Int (z1 * z2)) (max4' x1 x2 x3 x4).
 Proof.
-i. assert (0 <= - z2)%Z as Hz2'; [omega|clear Hz2].
+i. assert (0 <= - z2)%Z as Hz2'; [lia|clear Hz2].
 apply opp'_itv in Hle2.
 exploit times_prop_pp.
 - by apply Hz1.
@@ -1266,8 +1267,8 @@ Lemma times_prop_nn :
     le' (min4' x1 x2 x3 x4) (Int (z1 * z2))
     /\ le' (Int (z1 * z2)) (max4' x1 x2 x3 x4).
 Proof.
-i. assert (0 <= - z1)%Z as Hz1'; [omega|clear Hz1].
-assert (0 <= - z2)%Z as Hz2'; [omega|clear Hz2].
+i. assert (0 <= - z1)%Z as Hz1'; [lia|clear Hz1].
+assert (0 <= - z2)%Z as Hz2'; [lia|clear Hz2].
 apply opp'_itv in Hle1; simpl in Hle1.
 apply opp'_itv in Hle2; simpl in Hle2.
 exploit times_prop_pp.
@@ -1307,19 +1308,19 @@ destruct (Z_le_dec 0%Z z1), (Z_le_dec 0%Z z2).
 - exploit times_prop_pn.
   + apply l.
   + split; [by apply Hle1|by apply Hle2].
-  + assert (z2 <= 0)%Z as n'; [omega|by apply n'].
+  + assert (z2 <= 0)%Z as n'; [lia|by apply n'].
   + split; [by apply Hle0|by apply Hle3].
   + intros [H1 H2]. constructor; [by apply H1|by apply H2].
 - exploit times_prop_np.
-  + assert (z1 <= 0)%Z as n'; [omega|by apply n'].
+  + assert (z1 <= 0)%Z as n'; [lia|by apply n'].
   + split; [by apply Hle1|by apply Hle2].
   + apply l.
   + split; [by apply Hle0|by apply Hle3].
   + intros [H1 H2]. constructor; [by apply H1|by apply H2].
 - exploit times_prop_nn.
-  + assert (z1 <= 0)%Z as n'; [omega|by apply n'].
+  + assert (z1 <= 0)%Z as n'; [lia|by apply n'].
   + split; [by apply Hle1|by apply Hle2].
-  + assert (z2 <= 0)%Z as n'; [omega|by apply n'].
+  + assert (z2 <= 0)%Z as n'; [lia|by apply n'].
   + split; [by apply Hle0|by apply Hle3].
   + intros [H1 H2]. constructor; [by apply H1|by apply H2].
 Qed.
@@ -1587,7 +1588,7 @@ Proof.
 i. unfold eq_itv.
 destruct i1; [destruct i2|]; s; [|by inversion Hz2|by inversion Hz1].
 dest_if_dec; [|dest_if_dec; [|dest_if_dec]].
-- assert (eq' (Int z1) (Int z2)) as Hinv; [|inversion Hinv; omega].
+- assert (eq' (Int z1) (Int z2)) as Hinv; [|inversion Hinv; lia].
   destruct a as [a1 [a2 a3]]. inversion Hz1; inversion Hz2; subst.
   eapply eq'_trans; [eapply eq'_trans; [|by apply a2]|].
   + apply le'_antisym; [by auto|].
@@ -1668,7 +1669,7 @@ Proof.
 i. unfold ne_itv.
 destruct i1; [destruct i2|]; s; [|by inversion Hz2|by inversion Hz1].
 dest_if_dec; [|dest_if_dec; [|dest_if_dec]].
-- assert (eq' (Int z1) (Int z2)) as Hinv; [|inversion Hinv; omega].
+- assert (eq' (Int z1) (Int z2)) as Hinv; [|inversion Hinv; lia].
   destruct a as [a1 [a2 a3]]. inversion Hz1; inversion Hz2; subst.
   eapply eq'_trans; [eapply eq'_trans; [|by apply a2]|].
   + apply le'_antisym; [by auto|].
@@ -1739,7 +1740,7 @@ destruct i1; [destruct i2|]; s; [|by inversion Hz2|by inversion Hz1].
 dest_if_dec; [|dest_if_dec].
 - by apply true_itv_prop.
 - inversion Hz1; inversion Hz2; subst.
-  assert (le' (Int z2) (Int z1)) as Hinv; [|inversion Hinv; omega].
+  assert (le' (Int z2) (Int z1)) as Hinv; [|inversion Hinv; lia].
   eapply le'_trans; [by apply Hle4|].
   eapply le'_trans; [by apply l0|by auto].
 - by apply unknown_bool_prop1.
@@ -1754,7 +1755,7 @@ destruct i1; [destruct i2|]; s; [|by inversion Hz2|by inversion Hz1].
 dest_if_dec; [|dest_if_dec].
 - inversion Hz1; inversion Hz2; subst.
   assert (le' (Int z2) (Int z1)) as Hinv
-  ; [constructor; apply Znot_lt_ge in Hlt; omega|].
+  ; [constructor; apply Znot_lt_ge in Hlt; lia|].
   elim f.
   eapply le'_trans; [by apply Hle3|].
   eapply le'_trans; [by apply Hinv|by auto].
@@ -1851,12 +1852,12 @@ destruct (eq_dec i Bot)
 ; [| destruct (eq_dec i false_itv); [|destruct (le_dec false_itv i)] ].
 - inversion Hi; subst. by inversion e.
 - inversion Hi; subst. inversion e; subst.
-  assert (eq' (Int z) (Int 0)) as Hinv; [|inversion Hinv; omega].
+  assert (eq' (Int z) (Int 0)) as Hinv; [|inversion Hinv; lia].
   apply le'_antisym.
   + eapply le'_trans; [by apply Hle2|by apply le'_refl].
   + eapply le'_trans; [by apply le'_refl, Hlb|by apply Hle1].
-- constructor; constructor; omega.
-- constructor; constructor; omega.
+- constructor; constructor; lia.
+- constructor; constructor; lia.
 Qed.
 
 Lemma not_itv_prop2 : forall i (Hi : gamma 0 i), gamma 1 (not_itv i).
@@ -1866,7 +1867,7 @@ destruct (eq_dec i Bot)
 ; [| destruct (eq_dec i false_itv); [|destruct (le_dec false_itv i)] ].
 - inversion Hi; subst. by inversion e.
 - constructor; by apply le'_refl, eq'_refl.
-- constructor; constructor; omega.
+- constructor; constructor; lia.
 - elim f1. inversion Hi; subst. constructor; by auto.
 Qed.
 

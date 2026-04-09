@@ -16,6 +16,7 @@ Require Import VocabA.
 Require Import vgtac.
 Require Import Monad.
 Require Import Fold.
+Require Import Lia.
 
 Include Input.
 Include GenFunc.Make.
@@ -231,7 +232,7 @@ Lemma fields_g_nil :
     f = DomCon.Fields.nil.
 Proof.
 intros. eapply fields_g_nil'; [|by apply Hf].
-unfold DNList.size. omega.
+unfold DNList.size. lia.
 Qed.
 
 Lemma prop_approx_one_loc :

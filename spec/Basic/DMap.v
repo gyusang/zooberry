@@ -366,11 +366,12 @@ Lemma add_same : forall k1 k2 (Hk : A.eq k1 k2) v m, B.eq (find k1 (add k2 v m))
 Proof.
 i. unfold find, add.
 rewrite (M.P.F.find_o _ Hk).
-rewrite M.P.F.add_eq_o; auto using B.eq_refl.
+rewrite M.P.F.add_eq_o; auto using B.eq_refl, A.eq_refl.
 Qed.
 
 Lemma add_diff : forall k1 k2 (Hk : ~ A.eq k1 k2) v m, (find k1 (add k2 v m)) = (find k1 m).
-Proof. i; unfold find, add; rewrite (M.P.F.add_neq_o); auto. Qed.
+Proof. i; unfold find, add; rewrite (M.P.F.add_neq_o); auto using A.eq_sym.
+Qed.
 
 Definition add_mor' : Proper (A.eq ==> B.le ==> le ==> le) add.
 Proof.
@@ -382,7 +383,9 @@ intros k1 k2 Hk v1 v2 Hv m1 m2 Hm k. destruct (A.eq_dec k k1).
   + apply B.le_refl. rewrite add_diff; [by apply B.eq_refl|by auto].
   + eapply B.le_trans; [by apply Hm|].
     apply B.le_refl; apply B.eq_sym. rewrite add_diff; [by apply B.eq_refl|].
-    by eauto using A.eq_trans.
+    intros. apply n. eapply A.eq_trans. 
+    * apply FH.
+    * apply A.eq_sym. apply Hk.
 Qed.
 
 Lemma add_mor : Proper (A.eq ==> B.eq ==> eq ==> eq) add.
@@ -390,7 +393,7 @@ Proof.
 intros ? ? ? ? ? ? ? ? ?. apply le_antisym.
 - apply add_mor'; [by auto|by apply B.le_refl|by apply le_refl].
 - apply add_mor'
-  ; [by auto|by apply B.le_refl, B.eq_sym|by apply le_refl, eq_sym].
+  ; [by auto using A.eq_sym|by apply B.le_refl, B.eq_sym|by apply le_refl, eq_sym].
 Qed.
 
 Definition weak_add (k : A.t) (v : B.t) (m : t) : t :=
@@ -413,7 +416,7 @@ Qed.
 Lemma weak_add_diff : forall k1 k2 (Hk : ~ A.eq k1 k2) v m, (find k1 (weak_add k2 v m)) = (find k1 m).
 Proof.
   i; unfold find, weak_add; repeat dest_if_dec
-  ; rewrite M.P.F.add_neq_o; auto.
+  ; rewrite M.P.F.add_neq_o; auto using A.eq_sym.
 Qed.
 
 Definition weak_add_mor' : Proper (A.eq ==> B.le ==> le ==> le) weak_add.
@@ -436,7 +439,7 @@ destruct (A.eq_dec k k1).
   + apply B.le_refl. rewrite weak_add_diff; [by apply B.eq_refl|by auto].
   + eapply B.le_trans; [by apply Hm|].
     apply B.le_refl; apply B.eq_sym. rewrite weak_add_diff; [by apply B.eq_refl|].
-    by eauto using A.eq_trans.
+    by eauto using A.eq_trans, A.eq_sym.
 Qed.
 
 Definition weak_add_mor : Proper (A.eq ==> B.eq ==> eq ==> eq) weak_add.
@@ -456,10 +459,10 @@ Definition fast_weak_add (k : A.t) (v : B.t) (m : t) : t :=
 Definition remove (k : A.t) (m : t) : t := M.remove k m.
 
 Lemma remove_same : forall k1 k2 (Hk : A.eq k1 k2) m, (find k1 (remove k2 m)) = B.bot.
-Proof. i; unfold find, remove; rewrite M.P.F.remove_eq_o; auto. Qed.
+Proof. i; unfold find, remove; rewrite M.P.F.remove_eq_o; auto using A.eq_sym. Qed.
 
 Lemma remove_diff : forall k1 k2 (Hk : ~ A.eq k1 k2) m, (find k1 (remove k2 m)) = (find k1 m).
-Proof. i; unfold find, remove; rewrite M.P.F.remove_neq_o; auto. Qed.
+Proof. i; unfold find, remove; rewrite M.P.F.remove_neq_o; auto using A.eq_sym. Qed.
 
 (* The input function of map ([f]) should preserve non-bottom
 values. *)
