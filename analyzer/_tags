@@ -1,1 +1,1 @@
-true: package(cil), package(ocamlgraph)
+true: package(findlib), package(cil), package(cil.partial), package(ocamlgraph)
