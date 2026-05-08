@@ -1,0 +1,4 @@
+build/bin/oob_constant
+build/bin/oob_loop_off_by_one
+build/bin/oob_negative
+build/bin/oob_tainted_index
