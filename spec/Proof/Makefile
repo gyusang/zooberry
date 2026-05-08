@@ -6,7 +6,7 @@ VS := CorFin.v CorInsenLocal.v CorSen.v CorSenLocal.v DenInsenLocal.v \
       DenSenLocal.v DomCon.v DomInsen.v DomSen.v ExtFin.v \
       ExtInsenLocal.v ExtMem.v ExtSenLocal.v GamSen.v GenProof.v \
       SemCommon.v SemCon.v SemInsenLocal.v SemSen.v SemSenLocal.v \
-      UserProofType.v
+      UserProofType.v InputSanity.v
 
 .PHONY: all clean
 

@@ -8,18 +8,20 @@ Set Implicit Arguments.
 Require Import vgtac.
 Require Import VocabA.
 Require Import Monad Global UserInputType UserInput.
-Require Import DItv Vali SemProof.
+Require Import DItv DomArrayBlk SemProof.
 Require Import Morphisms.
 
 Load VeqCommon.
 
+Local Open Scope sumbool.
+
 Lemma mem_lookup_access_same :
   forall x m,
-    veq (RunOnly.SemPrune.SemEval.SemMem.mem_lookup x m)
-        (RunAccess.SemPrune.SemEval.SemMem.mem_lookup x m).
+    veq (RunOnly.SemEval.SemMem.mem_lookup x m)
+        (RunAccess.SemEval.SemMem.mem_lookup x m).
 Proof.
-i. unfold RunOnly.SemPrune.SemEval.SemMem.mem_lookup
-        , RunAccess.SemPrune.SemEval.SemMem.mem_lookup.
+i. unfold RunOnly.SemEval.SemMem.mem_lookup
+        , RunAccess.SemEval.SemMem.mem_lookup.
 apply PowLoc.fold2_3; [|by apply PowLoc.eq_refl|by dest_veq].
 i; dest_veq; [by auto|].
 i; dest_veq; [|i; by dest_veq].
@@ -94,13 +96,13 @@ Lemma eval_access_same :
 
 with eval_lv_access_same :
   forall lv m,
-    veq (RunOnly.SemPrune.SemEval.eval_lv Strong cn lv m)
-        (RunAccess.SemPrune.SemEval.eval_lv Strong cn lv m)
+    veq (RunOnly.SemEval.eval_lv Strong cn lv m)
+        (RunAccess.SemEval.eval_lv Strong cn lv m)
 
 with resolve_offset_access_same :
  forall o x m,
-   veq (RunOnly.SemPrune.SemEval.resolve_offset Strong cn x o m)
-       (RunAccess.SemPrune.SemEval.resolve_offset Strong cn x o m).
+   veq (RunOnly.SemEval.resolve_offset Strong cn x o m)
+       (RunAccess.SemEval.resolve_offset Strong cn x o m).
 Proof.
 { induction e; s; i.
 - by dest_veq.
@@ -114,9 +116,10 @@ Proof.
 - dest_veq; [by apply eval_access_same|].
   i; dest_veq; [by apply eval_access_same|i; by dest_veq].
 - dest_veq; [by apply eval_access_same|].
-  i; dest_if_dec.
-  dest_if_dec.
-  dest_if_dec.
+  i.
+  destruct (Itv.eq_dec (itv_of_val x) Itv.bot); [by dest_veq|].
+  destruct (Itv.eq_dec (itv_of_val x) Itv.zero); [by apply eval_access_same|].
+  destruct (~~ Itv.le_dec Itv.zero (itv_of_val x)); [by apply eval_access_same|].
   dest_veq; [by apply eval_access_same|].
   i; dest_veq; [by apply eval_access_same|].
   i; by dest_veq.
@@ -139,33 +142,26 @@ by dest_veq. }
   i; by apply IHo. }
 Qed.
 
-Lemma prune_access_same :
-  forall e m,
-    veq (RunOnly.SemPrune.prune g Strong cn e m)
-        (RunAccess.SemPrune.prune g Strong cn e m).
-Proof.
-destruct e; i
-; unfold RunOnly.SemPrune.prune, RunAccess.SemPrune.prune
-; try by dest_veq.
-destruct e1; try dest_veq.
-destruct lv; try dest_veq.
-destruct lh; try dest_veq.
-destruct o; try dest_veq.
-- by apply mem_lookup_access_same.
-- i; dest_veq; [by apply eval_access_same|].
-  i; by apply mem_update_access_same.
-Qed.
-
 Lemma eval_list_access_same :
   forall args m,
-    veq (RunOnly.SemPrune.SemEval.eval_list Strong cn args m)
-        (RunAccess.SemPrune.SemEval.eval_list Strong cn args m).
+    veq (RunOnly.SemEval.eval_list Strong cn args m)
+        (RunAccess.SemEval.eval_list Strong cn args m).
 Proof.
 induction args; s; i.
 - by dest_veq.
 - dest_veq; [by apply eval_access_same|].
   i; dest_veq; [by apply IHargs|].
   i; by dest_veq.
+Qed.
+
+Lemma eval_alloc_access_same :
+  forall a m,
+    veq (RunOnly.SemEval.eval_alloc Strong cn a m)
+        (RunAccess.SemEval.eval_alloc Strong cn a m).
+Proof.
+destruct a; s; i.
+dest_veq; [by apply eval_access_same|].
+i; by dest_veq.
 Qed.
 
 Lemma list_fold2_access_same T U V :
@@ -192,16 +188,66 @@ destruct (InterCfg.get_args (G.icfg g) e2); [|by dest_veq].
 by apply list_fold2_access_same.
 Qed.
 
-Lemma eval_alloc_access_same :
-  forall m a,
-    veq (RunOnly.SemPrune.SemEval.eval_alloc Strong cn a m)
-        (RunAccess.SemPrune.SemEval.eval_alloc Strong cn a m).
+Lemma set_ext_allocsite_access_same :
+  forall l a m,
+  veq
+    (RunOnly.set_ext_allocsite Strong cn l a m)
+    (RunAccess.set_ext_allocsite Strong cn l a m).
 Proof.
-unfold RunOnly.SemPrune.SemEval.eval_alloc,
-       RunAccess.SemPrune.SemEval.eval_alloc.
-destruct a.
-dest_veq; [by apply eval_access_same|].
-i; dest_veq.
+i; unfold RunOnly.set_ext_allocsite, RunAccess.set_ext_allocsite.
+dest_veq; [by apply eval_lv_access_same|].
+i; dest_veq; [by apply mem_wupdate_access_same|].
+i; by apply mem_wupdate_access_same.
+Qed.
+
+Lemma run_realloc_access_same :
+  forall l vs m,
+    veq (RunOnly.run_realloc Strong cn l vs m)
+        (RunAccess.run_realloc Strong cn l vs m).
+Proof.
+i; unfold RunOnly.run_realloc, RunAccess.run_realloc.
+destruct vs; [by auto|].
+destruct vs; [by auto|].
+dest_veq; [by apply eval_lv_access_same|].
+i; by apply mem_wupdate_access_same.
+Qed.
+
+Lemma run_strlen_access_same :
+  forall l m,
+    veq (RunOnly.run_strlen Strong cn l m)
+        (RunAccess.run_strlen Strong cn l m).
+Proof.
+i; unfold RunOnly.run_strlen, RunAccess.run_strlen.
+dest_veq; [by apply eval_lv_access_same|].
+i; by apply mem_wupdate_access_same.
+Qed.
+
+Lemma run_undef_funcs_access_same :
+  forall ret_opt p x m,
+    veq (RunOnly.run_undef_funcs Strong cn ret_opt p x m)
+        (RunAccess.run_undef_funcs Strong cn ret_opt p x m).
+Proof.
+i; unfold RunOnly.run_undef_funcs, RunAccess.run_undef_funcs.
+destruct ret_opt; [|by auto].
+dest_if_dec; [by apply run_realloc_access_same|].
+dest_if_dec; [by apply run_strlen_access_same|].
+by apply set_ext_allocsite_access_same.
+Qed.
+
+Lemma prune_access_same :
+  forall e m,
+    veq (RunOnly.SemPrune.prune g Strong cn e m)
+        (RunAccess.SemPrune.prune g Strong cn e m).
+Proof.
+unfold RunOnly.SemPrune.prune, RunAccess.SemPrune.prune.
+destruct e; i; try by dest_veq.
+destruct e1; try by dest_veq.
+destruct lv as [lh o p0].
+destruct lh; try by dest_veq.
+destruct o; try by dest_veq.
+dest_veq; [by apply mem_lookup_access_same|].
+i; dest_veq; [by apply eval_access_same|].
+i; by apply mem_update_access_same.
 Qed.
 
 Lemma run_only_access_same :
@@ -215,14 +261,10 @@ destruct cmd; i.
   ; try (dest_veq; [by apply eval_lv_access_same|]
          ; i; dest_veq; [by apply eval_access_same|]
          ; i; by apply mem_wupdate_access_same).
-- i; unfold RunOnly.set_ext_allocsite, RunAccess.set_ext_allocsite.
-  dest_veq; [by apply eval_lv_access_same|].
-  i; dest_veq; [by apply mem_wupdate_access_same|].
-  i; by apply mem_wupdate_access_same.
+- by apply set_ext_allocsite_access_same.
 - dest_veq; [by apply eval_lv_access_same|].
-  i; dest_veq.
-  + by apply eval_alloc_access_same.
-  + i; by apply mem_wupdate_access_same.
+  i; dest_veq; [by apply eval_alloc_access_same|].
+  i; by apply mem_wupdate_access_same.
 - dest_veq; [by apply eval_lv_access_same|].
   i; dest_veq; [by apply mem_wupdate_access_same|].
   i; by apply mem_wupdate_access_same.
@@ -231,20 +273,7 @@ destruct cmd; i.
 - by apply prune_access_same.
 - dest_veq; [by apply eval_list_access_same|].
   i; destruct (G.is_undef_e f g).
-  + unfold RunOnly.run_undef_funcs, RunAccess.run_undef_funcs.
-    destruct ret_opt; [|by dest_veq].
-    dest_if_dec; [|dest_if_dec].
-    * destruct x; [s; by dest_veq|].
-      destruct x; [s; by dest_veq|].
-      s; dest_veq; [by apply eval_lv_access_same|].
-      i; by apply mem_wupdate_access_same.
-    * unfold RunOnly.run_strlen, RunAccess.run_strlen.
-      dest_veq; [by apply eval_lv_access_same|].
-      i; by apply mem_wupdate_access_same.
-    * unfold RunOnly.set_ext_allocsite, RunAccess.set_ext_allocsite.
-      dest_veq; [by apply eval_lv_access_same|].
-      i; dest_veq; [by apply mem_wupdate_access_same|].
-      i; by apply mem_wupdate_access_same.
+  + by apply run_undef_funcs_access_same.
   + dest_veq; [by apply eval_access_same|].
     i; dest_veq.
     * unfold RunOnly.update_rets, RunAccess.update_rets.
@@ -259,7 +288,6 @@ destruct cmd; i.
 - by dest_veq.
 - by dest_veq.
 Qed.
-
 
 (* Morphisms *)
 
@@ -353,12 +381,12 @@ Lemma eval_mor :
 
 with eval_lv_mor :
   forall l, Proper (Mem.eq ==> Acc.MAcc.eq PowLoc.zb_eq)
-               (RunAccess.SemPrune.SemEval.eval_lv Strong cn l)
+               (RunAccess.SemEval.eval_lv Strong cn l)
 
 with resolve_offset_mor :
   forall o,
     Proper (Val.eq ==> Mem.eq ==> Acc.MAcc.eq PowLoc.zb_eq)
-           (fun v m => RunAccess.SemPrune.SemEval.resolve_offset Strong cn v o m).
+           (fun v m => RunAccess.SemEval.resolve_offset Strong cn v o m).
 Proof.
 { induction e; simpl RunAccess.eval.
 - intros ? ? ?; by apply Acc.MAcc.eq_equiv.
@@ -377,27 +405,30 @@ Proof.
   intros ? ? ?. apply ret_mor. by apply SemEval.eval_bop_mor.
 - intros ? ? ?; apply bind_mor with (Hteq:=Val.zb_eq); [by apply IHe1|].
   intros v1 v2 Hv.
-  apply if_dec_mor
-  ; [ intro HP; eapply Itv.eq_trans
-      ; [|by apply HP]; by apply Itv.eq_sym, DomAbs.itv_of_val_mor
-    | intro HP; eapply Itv.eq_trans; [|by apply HP]
-      ; by apply DomAbs.itv_of_val_mor
-    | by apply Acc.MAcc.eq_equiv |].
-  apply if_dec_mor
-  ; [ intro HP; eapply Itv.eq_trans
-      ; [|by apply HP]; by apply Itv.eq_sym, DomAbs.itv_of_val_mor
-    | intro HP; eapply Itv.eq_trans; [|by apply HP]
-      ; by apply DomAbs.itv_of_val_mor
-    | by apply IHe3 |].
-  apply if_dec_not_mor
-  ; [ intro HP; eapply Itv.le_trans; [by apply HP|]
-      ; by apply Itv.le_refl, DomAbs.itv_of_val_mor
-    | intro HP; eapply Itv.le_trans; [by apply HP|]
-      ; by apply Itv.le_refl, Itv.eq_sym, DomAbs.itv_of_val_mor
-    | by apply IHe2 |].
-  apply bind_mor with (Hteq:=Val.zb_eq); [by apply IHe2|].
-  intros ? ? ?; apply bind_mor with (Hteq:=Val.zb_eq); [by apply IHe3|].
-  intros ? ? ?; by apply ret_mor, Val.join_eq.
+  destruct (Itv.eq_dec (itv_of_val v1) Itv.bot) as [Hb1|Hnb1];
+  destruct (Itv.eq_dec (itv_of_val v2) Itv.bot) as [Hb2|Hnb2].
+  + apply ret_mor. by apply Val.eq_refl.
+  + elim Hnb2. eapply Itv.eq_trans; [|by apply Hb1].
+    apply Itv.eq_sym. apply itv_of_val_mor. by apply Hv.
+  + elim Hnb1. eapply Itv.eq_trans; [|by apply Hb2].
+    apply itv_of_val_mor. by apply Hv.
+  + destruct (Itv.eq_dec (itv_of_val v1) Itv.zero) as [Hz1|Hnz1];
+    destruct (Itv.eq_dec (itv_of_val v2) Itv.zero) as [Hz2|Hnz2].
+    * by apply IHe3.
+    * elim Hnz2. eapply Itv.eq_trans; [|by apply Hz1].
+      apply Itv.eq_sym. apply itv_of_val_mor. by apply Hv.
+    * elim Hnz1. eapply Itv.eq_trans; [|by apply Hz2].
+      apply itv_of_val_mor. by apply Hv.
+    * destruct (Itv.le_dec Itv.zero (itv_of_val v1)) as [Hle1|Hnle1];
+      destruct (Itv.le_dec Itv.zero (itv_of_val v2)) as [Hle2|Hnle2].
+      { apply bind_mor with (Hteq:=Val.zb_eq); [by apply IHe2|].
+        intros ? ? ?; apply bind_mor with (Hteq:=Val.zb_eq); [by apply IHe3|].
+        intros ? ? ?. by apply ret_mor, Val.join_eq. }
+      { elim Hnle2. eapply Itv.le_mor; [by apply Itv.eq_refl| |by apply Hle1].
+        apply itv_of_val_mor. by apply Hv. }
+      { elim Hnle1. eapply Itv.le_mor; [by apply Itv.eq_refl| |by apply Hle2].
+        apply Itv.eq_sym. apply itv_of_val_mor. by apply Hv. }
+      { by apply IHe2. }
 - intros m1 m2 Hm. destruct i; [|by apply IHe].
   apply bind_mor with (Hteq:=Val.zb_eq); [by apply IHe|].
   intros ? ? ?; apply ret_mor, DomAbs.modify_array_mor; [by auto|].
@@ -408,12 +439,12 @@ Proof.
 - intros ? ? ?; apply bind_mor with (Hteq:=PowLoc.zb_eq)
   ; [by apply eval_lv_mor|].
   intros ? ? ?; by apply ret_mor, DomAbs.val_of_pow_loc_mor. }
-{ induction l; simpl RunAccess.SemPrune.SemEval.eval_lv.
+{ induction l; simpl RunAccess.SemEval.eval_lv.
 intros ? ? ?; eapply bind_mor with (Hteq:=Val.zb_eq).
 - destruct lh; [|by apply eval_mor].
   by apply Acc.MAcc.eq_equiv.
 - intros ? ? ?; by apply resolve_offset_mor. }
-{ induction o; simpl RunAccess.SemPrune.SemEval.resolve_offset.
+{ induction o; simpl RunAccess.SemEval.resolve_offset.
 - intros ? ? ? ? ? ?; by apply ret_mor, SemEval.deref_of_val_mor.
 - intros ? ? ? ? ? ?. apply IHo; [|by auto].
   apply DomAbs.val_of_pow_loc_mor, PowLoc.join_eq.
@@ -423,35 +454,32 @@ intros ? ? ?; eapply bind_mor with (Hteq:=Val.zb_eq).
     ; [by apply DomAbs.array_of_val_mor|by apply Field.eq_refl].
 - intros ? ? ? ? ? ?.
   apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
-  intros ? ? ?; apply bind_mor with (Hteq:=Val.zb_eq)
-  ; [apply mem_lookup_mor; [by apply SemEval.deref_of_val_mor|by auto]|].
-  intros ? ? ?; apply IHo; [|by auto].
-  apply DomAbs.modify_array_mor; [by auto|].
-  apply DomArrayBlk.ArrayBlk.plus_offset_mor.
-  + by apply DomAbs.array_of_val_mor.
-  + by apply DomAbs.itv_of_val_mor. }
+  intros ? ? ?. apply bind_mor with (Hteq:=Val.zb_eq).
+  + apply mem_lookup_mor; [|by auto].
+    by apply SemEval.deref_of_val_mor.
+  + intros ? ? ?. apply IHo; [|by auto].
+    apply DomAbs.modify_array_mor; [by auto|].
+    apply DomArrayBlk.ArrayBlk.plus_offset_mor.
+    * by apply DomAbs.array_of_val_mor.
+    * by apply DomAbs.itv_of_val_mor. }
 Qed.
 
 Lemma eval_alloc'_mor :
-  Proper (Val.eq ==> Val.eq) (RunAccess.SemPrune.SemEval.eval_alloc' cn).
+  Proper (Val.eq ==> Val.eq) (RunAccess.SemEval.eval_alloc' cn).
 Proof.
-intros v1 v2 Hv. unfold RunAccess.SemPrune.SemEval.eval_alloc'.
+intros v1 v2 Hv. unfold RunAccess.SemEval.eval_alloc'.
 apply Val.join_eq; [by apply Val.eq_refl|].
-apply DomAbs.val_of_array_mor. unfold DomArrayBlk.ArrayBlk.make.
-apply DomArrayBlk.ArrayBlk.add_mor
-; [by apply Allocsite.eq_refl| |by apply DomArrayBlk.ArrayBlk.eq_refl].
-unfold DomArrayBlk.ArrInfo.make.
-constructor; s; [|by apply Itv.eq_refl].
-constructor; s; [by apply Itv.eq_refl|].
-by apply DomAbs.itv_of_val_mor.
+apply val_of_array_mor, ArrayBlk.add_mor; [by apply Allocsite.eq_refl| |by apply ArrayBlk.eq_refl].
+split; [split|]; s; try by apply Itv.eq_refl.
+by apply itv_of_val_mor.
 Qed.
 
 Lemma eval_alloc_mor :
   forall a, Proper (Mem.eq ==> Acc.MAcc.eq Val.zb_eq)
-               (RunAccess.SemPrune.SemEval.eval_alloc Strong cn a).
+                  (RunAccess.SemEval.eval_alloc Strong cn a).
 Proof.
-destruct a. intros m1 m2 Hm. simpl RunAccess.SemPrune.SemEval.eval_alloc.
-apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+destruct a; simpl RunAccess.SemEval.eval_alloc.
+intros m1 m2 Hm. apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
 intros ? ? ?. apply ret_mor. by apply eval_alloc'_mor.
 Qed.
 
@@ -464,7 +492,8 @@ intros l v1 v2 Hv m1 m2 Hm; unfold RunAccess.run_realloc.
 inversion Hv; subst; [by apply ret_mor|].
 inversion H0; subst; [by apply ret_mor|].
 apply bind_mor with (Hteq:=PowLoc.zb_eq); [by apply eval_lv_mor|].
-intros ? ? ?. apply mem_wupdate_mor; [by auto|by apply eval_alloc'_mor|by auto].
+intros ? ? ?. apply mem_wupdate_mor; [by auto| |by auto].
+by apply eval_alloc'_mor.
 Qed.
 
 Lemma run_strlen_mor :
@@ -476,6 +505,10 @@ apply bind_mor with (Hteq:=PowLoc.zb_eq); [by apply eval_lv_mor|].
 intros ? ? ?. apply mem_wupdate_mor; [by auto|by apply Val.eq_refl|by auto].
 Qed.
 
+Lemma external_value_mor :
+  forall a, Val.eq (RunAccess.external_value a) (RunAccess.external_value a).
+Proof. intros; by apply Val.eq_refl. Qed.
+
 Lemma set_ext_allocsite_mor :
   forall l a,
     Proper (Mem.eq ==> Acc.MAcc.eq Mem.zb_eq)
@@ -484,8 +517,8 @@ Proof.
 intros ? ? m1 m2 Hm; unfold RunAccess.set_ext_allocsite.
 apply bind_mor with (Hteq:=PowLoc.zb_eq); [by apply eval_lv_mor|].
 intros ? ? ?. apply bind_mor with (Hteq:=Mem.zb_eq).
-- apply mem_wupdate_mor; [by auto|by apply Val.eq_refl|by auto].
-- intros ? ? ?. apply mem_wupdate_mor; [by auto|by apply Val.eq_refl|by auto].
+- apply mem_wupdate_mor; [by auto|by apply external_value_mor|by auto].
+- intros ? ? ?. apply mem_wupdate_mor; [by auto|by apply external_value_mor|by auto].
 Qed.
 
 Lemma run_undef_funcs_mor :
@@ -495,8 +528,8 @@ Lemma run_undef_funcs_mor :
 Proof.
 i. intros vs1 vs2 Hvs m1 m2 Hm. unfold RunAccess.run_undef_funcs.
 destruct ret_opt; [|by apply ret_mor].
-apply if_dec_mor; [by auto|by auto|by apply run_realloc_mor|].
-apply if_dec_mor; [by auto|by auto|by apply run_strlen_mor|].
+dest_if_dec; [by apply run_realloc_mor|].
+dest_if_dec; [by apply run_strlen_mor|].
 by apply set_ext_allocsite_mor.
 Qed.
 
@@ -574,29 +607,9 @@ apply bind_mor with (Hteq:=PowLoc.zb_eq).
   intros ? ? ?; subst. by apply loc_of_proc_mor.
 Qed.
 
-Lemma prune_mor :
-  forall e, Proper (Mem.eq ==> Acc.MAcc.eq Mem.zb_eq)
-               (RunAccess.SemPrune.prune g Strong cn e).
-Proof.
-destruct e; intros ? ? ?; unfold RunAccess.SemPrune.prune
-; try by apply ret_mor.
-destruct e1; try by apply ret_mor.
-destruct lv; try by apply ret_mor.
-destruct lh; try by apply ret_mor.
-destruct o; try by apply ret_mor.
-apply bind_mor with (Hteq:=Val.zb_eq)
-; [apply mem_lookup_mor; [by apply PowLoc.eq_refl|by auto]|].
-intros ? ? ?; apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
-intros ? ? ?; apply mem_update_mor
-; [ by apply Loc.eq_refl
-  | apply DomAbs.modify_itv_mor
-    ; [by auto|apply SemPrune.itv_prune_mor; by apply itv_of_val_mor]
-  | by auto ].
-Qed.
-
 Lemma eval_list_mor :
   forall args, Proper (Mem.eq ==> Acc.MAcc.eq list_val_zb_eq)
-                  (RunAccess.SemPrune.SemEval.eval_list Strong cn args).
+                  (RunAccess.SemEval.eval_list Strong cn args).
 Proof.
 induction args; intros ? ? ?.
 - split; [by constructor|by apply Acc.eq_refl].
@@ -605,6 +618,23 @@ induction args; intros ? ? ?.
   + intros ? ? ?. apply bind_mor with (Hteq:=list_val_zb_eq).
     * by apply IHargs.
     * intros ? ? ?. apply ret_mor. by constructor.
+Qed.
+
+Lemma prune_mor :
+  forall e, Proper (Mem.eq ==> Acc.MAcc.eq Mem.zb_eq)
+                   (RunAccess.SemPrune.prune g Strong cn e).
+Proof.
+unfold RunAccess.SemPrune.prune.
+destruct e; intros ? ? ?; try by apply ret_mor.
+destruct e1; try by apply ret_mor.
+destruct lv as [lh o p0].
+destruct lh; try by apply ret_mor.
+destruct o; try by apply ret_mor.
+apply bind_mor with (Hteq:=Val.zb_eq); [by apply mem_lookup_mor|].
+intros ? ? ?. apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+intros ? ? ?. apply mem_update_mor; [by apply Loc.eq_refl| |by auto].
+apply DomAbs.modify_itv_mor; [by auto|].
+apply SemPrune.itv_prune_mor; by apply DomAbs.itv_of_val_mor.
 Qed.
 
 Ltac mor :=
@@ -624,10 +654,8 @@ repeat match goal with
   intro Heq; apply Itv.eq_trans with x1
   ; [ apply Itv.eq_sym
     | apply Itv.eq_trans with y1; [by apply Heq|] ]
-| |- Itv.eq (DomAbs.itv_of_val _) (DomAbs.itv_of_val _) =>
-  apply DomAbs.itv_of_val_mor
-| |- Acc.MAcc.eq Val.zb_eq (RunAccess.SemPrune.SemEval.eval _ _ _ _)
-                (RunAccess.SemPrune.SemEval.eval _ _ _ _) =>
+| |- Acc.MAcc.eq Val.zb_eq (RunAccess.SemEval.eval _ _ _ _)
+                (RunAccess.SemEval.eval _ _ _ _) =>
   apply eval_mor
 | |- Acc.MAcc.eq Val.zb_eq (RunAccess.eval _ _ _ _)
                 (RunAccess.eval _ _ _ _) =>
@@ -656,8 +684,8 @@ repeat match goal with
 | |- Val.eq (SemEval.eval_uop _ _) (SemEval.eval_uop _ _) =>
   apply SemEval.eval_uop_mor
 | |- Acc.MAcc.eq Val.zb_eq
-    (RunAccess.SemPrune.SemEval.SemMem.mem_lookup _ _)
-    (RunAccess.SemPrune.SemEval.SemMem.mem_lookup _ _) =>
+    (RunAccess.SemEval.SemMem.mem_lookup _ _)
+    (RunAccess.SemEval.SemMem.mem_lookup _ _) =>
   apply mem_lookup_mor
 | |- Val.eq (SemEval.eval_bop _ _ _) (SemEval.eval_bop _ _ _) =>
   apply SemEval.eval_bop_mor
@@ -671,9 +699,12 @@ repeat match goal with
   apply DomAbs.array_of_val_mor
 | |- Val.eq (DomAbs.val_of_pow_loc _) (DomAbs.val_of_pow_loc _) =>
   apply DomAbs.val_of_pow_loc_mor
+| |- PowLoc.eq (DomAbs.pow_loc_of_val _)
+              (DomAbs.pow_loc_of_val _) =>
+  apply DomAbs.pow_loc_of_val_mor
 | |- Acc.MAcc.eq PowLoc.zb_eq
-      (RunAccess.SemPrune.SemEval.resolve_offset _ _ _ _ _)
-      (RunAccess.SemPrune.SemEval.resolve_offset _ _ _ _ _) =>
+      (RunAccess.SemEval.resolve_offset _ _ _ _ _)
+      (RunAccess.SemEval.resolve_offset _ _ _ _ _) =>
   apply resolve_offset_mor
 | |- PowLoc.eq (SemEval.deref_of_val _) (SemEval.deref_of_val _) =>
   apply SemEval.deref_of_val_mor
@@ -691,21 +722,23 @@ repeat match goal with
 | |- context[Loc.eq'] => replace Loc.eq' with Loc.eq by auto
 | |- Loc.eq (DomBasic.loc_of_allocsite _) (DomBasic.loc_of_allocsite _) =>
   apply loc_of_allocsite_mor
-| |- Val.eq (RunAccess.SemPrune.SemEval.eval_alloc' _ _)
-           (RunAccess.SemPrune.SemEval.eval_alloc' _ _) =>
+| |- Val.eq (RunAccess.SemEval.eval_alloc' _ _)
+           (RunAccess.SemEval.eval_alloc' _ _) =>
   apply eval_alloc'_mor
-| |- Acc.MAcc.eq Val.zb_eq (RunAccess.SemPrune.SemMem.mem_lookup _ _)
-                (RunAccess.SemPrune.SemMem.mem_lookup _ _) =>
+| |- Acc.MAcc.eq Val.zb_eq (RunAccess.SemMem.mem_lookup _ _)
+                (RunAccess.SemMem.mem_lookup _ _) =>
   apply mem_lookup_mor
-| |- Acc.MAcc.eq Mem.zb_eq (RunAccess.SemPrune.SemMem.mem_update _ _ _ _ _)
-                (RunAccess.SemPrune.SemMem.mem_update _ _ _ _ _) =>
+| |- Acc.MAcc.eq Val.zb_eq (RunAccess.mem_lookup _ _)
+                (RunAccess.mem_lookup _ _) =>
+  apply mem_lookup_mor
+| |- Acc.MAcc.eq Mem.zb_eq (RunAccess.SemMem.mem_update _ _ _ _ _)
+                (RunAccess.SemMem.mem_update _ _ _ _ _) =>
   apply mem_update_mor
-| |- Val.eq (DomAbs.modify_itv _ _) (DomAbs.modify_itv _ _) =>
-  apply DomAbs.modify_itv_mor
-| |- Itv.eq (SemPrune.itv_prune _ _ _) (SemPrune.itv_prune _ _ _) =>
-  apply SemPrune.itv_prune_mor
-| |- Acc.MAcc.eq list_val_zb_eq (RunAccess.SemPrune.SemEval.eval_list _ _ _ _)
-                (RunAccess.SemPrune.SemEval.eval_list _ _ _ _) =>
+| |- Acc.MAcc.eq Mem.zb_eq (RunAccess.mem_update _ _ _ _ _)
+                (RunAccess.mem_update _ _ _ _ _) =>
+  apply mem_update_mor
+| |- Acc.MAcc.eq list_val_zb_eq (RunAccess.SemEval.eval_list _ _ _ _)
+                (RunAccess.SemEval.eval_list _ _ _ _) =>
   apply eval_list_mor
 | |- Val.eq (Val.join _ _) (Val.join _ _) => apply Val.join_eq
 | |- Mem.eq (Mem.join _ _) (Mem.join _ _) => apply Mem.join_eq
@@ -773,18 +806,18 @@ Lemma mem_wupdate_access_sound :
   forall k v, aeqm1 (RunAccess.mem_wupdate Strong k v).
 Proof.
 unfold RunAccess.mem_wupdate, RunAccess.SemMem.mem_wupdate; i.
-- remember
-    (fun (lv : Loc.t) m_a =>
-       DomMem.Acc.MAcc.bind m_a (RunAccess.SemMem.weak_add Strong lv v))
-  as f.
-  apply ret_mem2, fold_access_sound.
-  + subst; i; destruct m; s.
-    by apply Acc.join_left.
-  + subst; i. apply bind_mmem. by apply weak_add_access_sound.
-  + intros e m1 m2 Hm. subst.
-    eapply bind_mor; [by apply Hm|].
-    intros m1' m2' Hm'.
-    apply weak_add_mor; [by apply Loc.eq_refl|by apply Val.eq_refl|by auto].
+remember
+  (fun (lv : Loc.t) m_a =>
+     DomMem.Acc.MAcc.bind m_a (RunAccess.SemMem.weak_add Strong lv v))
+as f.
+apply ret_mem2, fold_access_sound.
++ subst; i; destruct m; s.
+  by apply Acc.join_left.
++ subst; i. apply bind_mmem. by apply weak_add_access_sound.
++ intros e m1 m2 Hm. subst.
+  eapply bind_mor; [by apply Hm|].
+  intros m1' m2' Hm'.
+  apply weak_add_mor; [by apply Loc.eq_refl|by apply Val.eq_refl|by auto].
 Qed.
 
 Lemma mem_find_access_sound :
@@ -820,17 +853,18 @@ Qed.
 Lemma eval_access_sound : forall e, aeqv Val.zb_eq (RunAccess.eval Strong cn e)
 
 with eval_lv_access_sound :
-  forall lv, aeqv PowLoc.zb_eq (RunAccess.SemPrune.SemEval.eval_lv Strong cn lv)
+  forall lv, aeqv PowLoc.zb_eq (RunAccess.SemEval.eval_lv Strong cn lv)
 
 with resolve_offset_sound :
   forall o x, aeqv PowLoc.zb_eq
-             (RunAccess.SemPrune.SemEval.resolve_offset Strong cn x o).
+             (RunAccess.SemEval.resolve_offset Strong cn x o).
 Proof.
 induction e; simpl RunAccess.eval.
 { by apply aeqv_3. }
 { apply aeqv_2 with (Hteq:=PowLoc.zb_eq)
-  ; [by apply mem_lookup_access_sound|by mor|].
-  by apply eval_lv_access_sound. }
+  ; [by apply mem_lookup_access_sound| |].
+  - intros m1 m2 Hm l1 l2 Hl. by apply mem_lookup_mor.
+  - by apply eval_lv_access_sound. }
 { by apply aeqv_3. }
 { by apply aeqv_3. }
 { by apply aeqv_3. }
@@ -838,16 +872,60 @@ induction e; simpl RunAccess.eval.
 { by apply aeqv_3. }
 { apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply IHe].
   by apply aeqv_3. }
-{ apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply IHe1].
-  apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply IHe2].
-  by apply aeqv_3. }
-{ apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply IHe1].
-  dest_if_dec; [by apply aeqv_3|].
-  dest_if_dec.
-  dest_if_dec.
-  apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply IHe2].
-  apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply IHe3].
-  by apply aeqv_3. }
+{ apply aeqv_2 with (Hteq:=Val.zb_eq).
+  - i. apply aeqv_2 with (Hteq:=Val.zb_eq).
+	    + i. by apply aeqv_3.
+	    + intros m1 m2 Hm v1 v2 Hv.
+	      apply ret_mor. apply SemEval.eval_bop_mor; [by apply Val.eq_refl|by apply Hv].
+	    + by apply IHe2.
+	  - intros m1 m2 Hm v1 v2 Hv.
+	    apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+	    intros w1 w2 Hw. apply ret_mor.
+	    apply SemEval.eval_bop_mor; [by apply Hv|by apply Hw].
+  - by apply IHe1. }
+{ apply aeqv_2 with (Hteq:=Val.zb_eq).
+  - i.
+    destruct (Itv.eq_dec (itv_of_val x) Itv.bot).
+    + by apply aeqv_3.
+    + destruct (Itv.eq_dec (itv_of_val x) Itv.zero).
+      * by apply IHe3.
+      * destruct (~~ Itv.le_dec Itv.zero (itv_of_val x)).
+        { by apply IHe2. }
+        { apply aeqv_2 with (Hteq:=Val.zb_eq); [i| |by apply IHe2].
+	          - apply aeqv_2 with (Hteq:=Val.zb_eq); [i| |by apply IHe3].
+	            + by apply aeqv_3.
+	            + intros m1 m2 Hm v1 v2 Hv.
+	              apply ret_mor. apply Val.join_eq; [by apply Val.eq_refl|by apply Hv].
+	          - intros m1 m2 Hm v1 v2 Hv.
+	            apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+	            intros w1 w2 Hw. apply ret_mor.
+	            apply Val.join_eq; [by apply Hv|by apply Hw]. }
+  - intros m1 m2 Hm v1 v2 Hv.
+    destruct (Itv.eq_dec (itv_of_val v1) Itv.bot) as [Hb1|Hnb1];
+    destruct (Itv.eq_dec (itv_of_val v2) Itv.bot) as [Hb2|Hnb2].
+    + apply ret_mor. by apply Val.eq_refl.
+    + elim Hnb2. eapply Itv.eq_trans; [|by apply Hb1].
+      apply Itv.eq_sym. apply itv_of_val_mor. by apply Hv.
+    + elim Hnb1. eapply Itv.eq_trans; [|by apply Hb2].
+      apply itv_of_val_mor. by apply Hv.
+    + destruct (Itv.eq_dec (itv_of_val v1) Itv.zero) as [Hz1|Hnz1];
+      destruct (Itv.eq_dec (itv_of_val v2) Itv.zero) as [Hz2|Hnz2].
+      * by apply eval_mor.
+      * elim Hnz2. eapply Itv.eq_trans; [|by apply Hz1].
+        apply Itv.eq_sym. apply itv_of_val_mor. by apply Hv.
+      * elim Hnz1. eapply Itv.eq_trans; [|by apply Hz2].
+        apply itv_of_val_mor. by apply Hv.
+      * destruct (Itv.le_dec Itv.zero (itv_of_val v1)) as [Hle1|Hnle1];
+        destruct (Itv.le_dec Itv.zero (itv_of_val v2)) as [Hle2|Hnle2].
+        { apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+          intros ? ? ?. apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+          intros ? ? ?. by apply ret_mor, Val.join_eq. }
+        { elim Hnle2. eapply Itv.le_mor; [by apply Itv.eq_refl| |by apply Hle1].
+          apply itv_of_val_mor. by apply Hv. }
+        { elim Hnle1. eapply Itv.le_mor; [by apply Itv.eq_refl| |by apply Hle2].
+          apply Itv.eq_sym. apply itv_of_val_mor. by apply Hv. }
+        { by apply eval_mor. }
+  - by apply IHe1. }
 { destruct i.
   - apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply IHe].
     by apply aeqv_3.
@@ -857,25 +935,48 @@ induction e; simpl RunAccess.eval.
 { apply aeqv_1 with (Hteq:=PowLoc.zb_eq); [by mor|].
   by apply eval_lv_access_sound. }
 
-destruct lv; simpl RunAccess.SemPrune.SemEval.eval_lv.
+destruct lv; simpl RunAccess.SemEval.eval_lv.
 { apply aeqv_2 with (Hteq:=Val.zb_eq); [|by mor|].
   - by apply resolve_offset_sound.
   - destruct lh.
     + by apply aeqv_3.
     + by apply eval_access_sound. }
 
-induction o; simpl RunAccess.SemPrune.SemEval.resolve_offset; i.
+induction o; simpl RunAccess.SemEval.resolve_offset; i.
 { by apply aeqv_3. }
 { by apply IHo. }
-{ apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply eval_access_sound].
-  apply aeqv_2 with (Hteq:=Val.zb_eq)
-  ; [i|by mor|by apply mem_lookup_access_sound].
-  by apply IHo. }
+{ apply aeqv_2 with (Hteq:=Val.zb_eq); [i| |by apply eval_access_sound].
+  - apply aeqv_2 with (Hteq:=Val.zb_eq)
+    ; [i| |by apply mem_lookup_access_sound].
+    + by apply IHo.
+    + intros m1 m2 Hm v1 v2 Hv.
+	      apply resolve_offset_mor; [|by auto].
+	      apply DomAbs.modify_array_mor; [by auto|].
+	      apply DomArrayBlk.ArrayBlk.plus_offset_mor.
+	      * by apply DomAbs.array_of_val_mor.
+	      * by apply Itv.eq_refl.
+  - intros m1 m2 Hm v1 v2 Hv.
+    apply bind_mor with (Hteq:=Val.zb_eq).
+    + apply mem_lookup_mor; [by apply SemEval.deref_of_val_mor, Val.eq_refl|by auto].
+    + intros w1 w2 Hw.
+      apply resolve_offset_mor; [|by auto].
+	      apply DomAbs.modify_array_mor; [by auto|].
+	      apply DomArrayBlk.ArrayBlk.plus_offset_mor.
+	      * by apply DomAbs.array_of_val_mor.
+	      * by apply DomAbs.itv_of_val_mor.
+}
+Qed.
+
+Lemma eval_alloc_access_sound :
+  forall a, aeqv Val.zb_eq (RunAccess.SemEval.eval_alloc Strong cn a).
+Proof.
+destruct a; simpl RunAccess.SemEval.eval_alloc.
+apply aeqv_2 with (Hteq:=Val.zb_eq); [i|by mor|by apply eval_access_sound].
+by apply aeqv_3.
 Qed.
 
 Lemma set_ext_allocsite_access_sound :
-  forall lv a, aeqm1 (RunAccess.set_ext_allocsite
-                    Strong cn lv (allocsite_of_ext a)).
+  forall lv a, aeqm1 (RunAccess.set_ext_allocsite Strong cn lv a).
 Proof.
 i; unfold RunAccess.set_ext_allocsite.
 apply bind_val1 with (Ht:=PowLoc.zb_eq)
@@ -884,32 +985,9 @@ apply bind_mem1; [|by mor|by apply mem_wupdate_access_sound].
 by apply mem_wupdate_access_sound.
 Qed.
 
-Lemma eval_alloc_access_sound :
-  forall a, aeqv Val.zb_eq (RunAccess.SemPrune.SemEval.eval_alloc Strong cn a).
-Proof.
-destruct a; unfold RunAccess.SemPrune.SemEval.eval_alloc.
-apply aeqv_1 with (Hteq:=Val.zb_eq); [by mor|by apply eval_access_sound].
-Qed.
-
-Lemma prune_access_sound :
-  forall e, aeqm1 (RunAccess.SemPrune.prune g Strong cn e).
-Proof.
-destruct e; unfold RunAccess.SemPrune.prune
-; try (apply ret_mem1; i; by mor).
-destruct e1; try (apply ret_mem1; i; by mor).
-destruct lv; try (apply ret_mem1; i; by mor).
-destruct lh; try (apply ret_mem1; i; by mor).
-destruct o; try (apply ret_mem1; i; by mor).
-apply bind_val1 with (Ht:=Val.zb_eq)
-; [i|by mor|by apply mem_lookup_access_sound].
-apply bind_val1 with (Ht:=Val.zb_eq)
-; [i|by mor|by apply eval_access_sound].
-by apply mem_update_access_sound.
-Qed.
-
 Lemma eval_list_access_sound :
   forall args, aeqv list_val_zb_eq
-                (RunAccess.SemPrune.SemEval.eval_list Strong cn args).
+                (RunAccess.SemEval.eval_list Strong cn args).
 Proof.
 induction args.
 - s. apply aeqv_3.
@@ -938,13 +1016,39 @@ by apply mem_wupdate_access_sound.
 Qed.
 
 Lemma run_undef_funcs_access_sound :
-  forall ret_opt p v, aeqm1 (RunAccess.run_undef_funcs Strong cn ret_opt p v).
+  forall ret_opt p v,
+    aeqm1 (RunAccess.run_undef_funcs Strong cn ret_opt p v).
 Proof.
-unfold RunAccess.run_undef_funcs; i. destruct ret_opt.
-- destruct (Proc.eq_dec p str_realloc); [by apply run_realloc_access_sound|].
-  destruct (Proc.eq_dec p str_strlen); [by apply run_strlen_access_sound|].
-  apply set_ext_allocsite_access_sound.
-- apply ret_mem1; i; by apply Mem.eq_refl.
+unfold RunAccess.run_undef_funcs; i.
+destruct ret_opt; [|apply ret_mem1; i; by apply Mem.eq_refl].
+dest_if_dec; [by apply run_realloc_access_sound|].
+dest_if_dec; [by apply run_strlen_access_sound|].
+by apply set_ext_allocsite_access_sound.
+Qed.
+
+Lemma prune_access_sound :
+  forall e, aeqm1 (RunAccess.SemPrune.prune g Strong cn e).
+Proof.
+unfold RunAccess.SemPrune.prune.
+destruct e; try (apply ret_mem1; i; by apply Mem.eq_refl).
+destruct e1; try (apply ret_mem1; i; by apply Mem.eq_refl).
+destruct lv as [lh o p0].
+destruct lh; try (apply ret_mem1; i; by apply Mem.eq_refl).
+destruct o; try (apply ret_mem1; i; by apply Mem.eq_refl).
+apply bind_val1 with (Ht:=Val.zb_eq); [i| |by apply mem_lookup_access_sound].
+- apply bind_val1 with (Ht:=Val.zb_eq); [i| |by apply eval_access_sound].
+  + by apply mem_update_access_sound.
+  + intros v1 v2 Hv m1 m2 Hm.
+    apply mem_update_mor; [by apply Loc.eq_refl| |by auto].
+    apply DomAbs.modify_itv_mor; [by apply Val.eq_refl|].
+    apply SemPrune.itv_prune_mor; [by apply Itv.eq_refl|].
+    by apply DomAbs.itv_of_val_mor.
+- intros x1 x2 Hx m1 m2 Hm.
+  apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+  intros v1 v2 Hv.
+  apply mem_update_mor; [by apply Loc.eq_refl| |by auto].
+  apply DomAbs.modify_itv_mor; [by auto|].
+  apply SemPrune.itv_prune_mor; by apply DomAbs.itv_of_val_mor.
 Qed.
 
 Lemma list_fold2_access_sound
@@ -1001,7 +1105,7 @@ remember (fun (s : TStr.string_t) (acc : Acc.MAcc.m DomMem.Mem.t) =>
   as f'.
 apply PowProc.fold2_4
 with (P := fun t q =>
-             forall (Hdis : Vali.disjoint m' (Acc.get_acc q)),
+             forall (Hdis : disjoint m' (Acc.get_acc q)),
                Acc.MAcc.eq Mem.zb_eq t (mem_join q m')).
 - subst; i. destruct t1 as [x1 a1], t2 as [x2 a2].
   remember (f e x1) as _m.
@@ -1047,26 +1151,74 @@ Qed.
 Lemma run_access_sound : aeqm1 (run_access Strong g cn cmd).
 Proof.
 unfold run_access, RunAccess.run. destruct cmd.
-- destruct lv, lh, o
-  ; try (apply bind_val1 with (Ht:=PowLoc.zb_eq)
-         ; [|by mor|by apply eval_lv_access_sound]
-         ; i; apply bind_val1 with (Ht:=Val.zb_eq)
-         ; [ by apply mem_wupdate_access_sound
-           | by mor
-           | by apply eval_access_sound ]).
-  apply bind_val1 with (Ht:=Val.zb_eq).
-  * by apply mem_update_access_sound.
-  * by apply mem_update_mor.
-  * by apply eval_access_sound.
+- destruct lv as [lh o p]; destruct lh; destruct o; simpl RunAccess.run.
+  + apply bind_val1 with (Ht:=Val.zb_eq).
+    * i; by apply mem_update_access_sound.
+    * intros v1 v2 Hv m1 m2 Hm.
+      apply mem_update_mor; [by apply Loc.eq_refl|by auto|by auto].
+    * by apply eval_access_sound.
+  + apply bind_val1 with (Ht:=PowLoc.zb_eq)
+    ; [| |by apply eval_lv_access_sound].
+    * i; apply bind_val1 with (Ht:=Val.zb_eq)
+      ; [by apply mem_wupdate_access_sound| |by apply eval_access_sound].
+      intros v1 v2 Hv m1 m2 Hm.
+      apply mem_wupdate_mor; [by apply PowLoc.eq_refl|by auto|by auto].
+    * intros l1 l2 Hl m1 m2 Hm.
+      apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+      intros v1 v2 Hv.
+      apply mem_wupdate_mor; [by auto|by auto|by auto].
+  + apply bind_val1 with (Ht:=PowLoc.zb_eq)
+    ; [| |by apply eval_lv_access_sound].
+    * i; apply bind_val1 with (Ht:=Val.zb_eq)
+      ; [by apply mem_wupdate_access_sound| |by apply eval_access_sound].
+      intros v1 v2 Hv m1 m2 Hm.
+      apply mem_wupdate_mor; [by apply PowLoc.eq_refl|by auto|by auto].
+    * intros l1 l2 Hl m1 m2 Hm.
+      apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+      intros v1 v2 Hv.
+      apply mem_wupdate_mor; [by auto|by auto|by auto].
+  + apply bind_val1 with (Ht:=PowLoc.zb_eq)
+    ; [| |by apply eval_lv_access_sound].
+    * i; apply bind_val1 with (Ht:=Val.zb_eq)
+      ; [by apply mem_wupdate_access_sound| |by apply eval_access_sound].
+      intros v1 v2 Hv m1 m2 Hm.
+      apply mem_wupdate_mor; [by apply PowLoc.eq_refl|by auto|by auto].
+    * intros l1 l2 Hl m1 m2 Hm.
+      apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+      intros v1 v2 Hv.
+      apply mem_wupdate_mor; [by auto|by auto|by auto].
+  + apply bind_val1 with (Ht:=PowLoc.zb_eq)
+    ; [| |by apply eval_lv_access_sound].
+    * i; apply bind_val1 with (Ht:=Val.zb_eq)
+      ; [by apply mem_wupdate_access_sound| |by apply eval_access_sound].
+      intros v1 v2 Hv m1 m2 Hm.
+      apply mem_wupdate_mor; [by apply PowLoc.eq_refl|by auto|by auto].
+    * intros l1 l2 Hl m1 m2 Hm.
+      apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+      intros v1 v2 Hv.
+      apply mem_wupdate_mor; [by auto|by auto|by auto].
+  + apply bind_val1 with (Ht:=PowLoc.zb_eq)
+    ; [| |by apply eval_lv_access_sound].
+    * i; apply bind_val1 with (Ht:=Val.zb_eq)
+      ; [by apply mem_wupdate_access_sound| |by apply eval_access_sound].
+      intros v1 v2 Hv m1 m2 Hm.
+      apply mem_wupdate_mor; [by apply PowLoc.eq_refl|by auto|by auto].
+    * intros l1 l2 Hl m1 m2 Hm.
+      apply bind_mor with (Hteq:=Val.zb_eq); [by apply eval_mor|].
+      intros v1 v2 Hv.
+      apply mem_wupdate_mor; [by auto|by auto|by auto].
 - by apply set_ext_allocsite_access_sound.
 - apply bind_val1 with (Ht:=PowLoc.zb_eq).
   + i; apply bind_val1 with (Ht:=Val.zb_eq).
     * i; by apply mem_wupdate_access_sound.
-    * by apply mem_wupdate_mor.
+    * intros v1 v2 Hv m1 m2 Hm.
+      apply mem_wupdate_mor; [by auto| |by auto].
+      by auto.
     * by apply eval_alloc_access_sound.
-  + intros k1 k2 Hk m1 m2 Hm; apply bind_mor with (Hteq:=Val.zb_eq).
+  + intros k1 k2 Hk m1 m2 Hm.
+    apply bind_mor with (Hteq:=Val.zb_eq).
     * by apply eval_alloc_mor.
-    * intros v1 v2 Hv; by apply mem_wupdate_mor.
+    * intros ? ? ?. apply mem_wupdate_mor; by auto.
   + by apply eval_lv_access_sound.
 - apply bind_val1 with (Ht:=PowLoc.zb_eq).
   + i; apply bind_mem1.

@@ -32,7 +32,7 @@ Lemma var_g_mor : Proper (DomCon.Var.eq ==> Var.eq) Var_g.
 Proof.
 inversion 1.
 - by constructor.
-- destruct x' as [[n1 f1] x'], y' as [[n2 f2] y2']. simpl in Heq.
+- destruct x' as [[n1 f1] x1], y' as [[n2 f2] y2]. simpl in Heq.
   constructor. tauto.
 Qed.
 
@@ -98,27 +98,28 @@ intros [vr1 f1] [vr2 f2] Hl. inversion Hl. constructor. simpl in *; split.
 - by apply fields_g_mor.
 Qed.
 
-Definition Itv_g := Itv.gamma.
-
 Inductive ArrayBlk_g' : DomCon.Region.t -> ArrayBlk.t -> Prop :=
 | ArrayBlk_g_intro :
-    forall s a o sz st o' sz' st' ab
-           (Ho : Itv_g o o') (Hsz : Itv_g sz sz' ) (Hst : Itv_g st st')
-           (Hab : ArrayBlk.find (Allocsite_g a) ab = (o', sz', st')),
-      ArrayBlk_g' (s, a, (o, sz, st)) ab.
+    forall step a o sz st ab io is it
+      (Hfind : ArrayBlk.find (Allocsite_g a) ab = ArrInfo.make io is it)
+      (Ho : Itv.gamma o io)
+      (Hsz : Itv.gamma sz is)
+      (Hst : Itv.gamma st it),
+      ArrayBlk_g' (step, a, (o, sz, st)) ab.
 
 Definition ArrayBlk_g := ArrayBlk_g'.
 
 Inductive Val_g' : DomCon.val_t -> Val.t -> Prop :=
 | Val_g_z :
-    forall z i ls ab ps (Hz : Itv_g z i), Val_g' (inl (inl z)) (i, ls, ab, ps)
+    forall z i ls ab ps (Hi : Itv.gamma z i),
+      Val_g' (inl (inl z)) (i, ls, ab, ps)
 | Val_g_loc :
     forall l i ls ab ps (Hl : PowLoc.mem (Loc_g l) ls = true),
       Val_g' (inl (inr l)) (i, ls, ab, ps)
 | Val_g_ab :
     forall r i ls ab ps (Hl : ArrayBlk_g r ab),
       Val_g' (inl (inr (DomCon.VarRegion.Inr r, DomCon.Fields.nil)))
-            (i, ls, ab, ps)
+             (i, ls, ab, ps)
 | Val_g_proc :
     forall p i ls ab ps (Hp : PowProc.mem p ps = true),
       Val_g' (inr p) (i, ls, ab, ps)
@@ -131,17 +132,16 @@ Definition SProc_g (f : DomCon.Proc.t) : Loc.t := Loc.Inr f.
 
 Lemma arrayBlk_g_monotone : monotone ArrayBlk.le ArrayBlk_g.
 Proof.
-intros v x y. inversion 1; i. subst.
-assert (ArrInfo.le (o', sz', st') (ArrayBlk.find (Allocsite_g a) y)) as Hy
-; [rewrite <- Hab; apply Hle|].
-remember (ArrayBlk.find (Allocsite_g a) y) as oss'.
-destruct oss' as [[o'' sz''] st''].
-inversion Hy as [[Ho'' Hsz''] Hst'']; simpl in Ho'', Hsz'', Hst''.
-apply ArrayBlk_g_intro with o'' sz'' st''.
-- by apply Itv.gamma_monotone with o'.
-- by apply Itv.gamma_monotone with sz'.
-- by apply Itv.gamma_monotone with st'.
-- by auto.
+intros r x y Hx Hle. inversion Hx; subst.
+specialize (Hle (Allocsite_g a)). rewrite Hfind in Hle.
+remember (ArrayBlk.find (Allocsite_g a) y) as info.
+destruct info as [[io' is'] it'].
+destruct Hle as [[Hio His] Hit].
+symmetry in Heqinfo.
+eapply ArrayBlk_g_intro; [by apply Heqinfo| | |].
+- eapply Itv.gamma_monotone; [by apply Ho|by apply Hio].
+- eapply Itv.gamma_monotone; [by apply Hsz|by apply His].
+- eapply Itv.gamma_monotone; [by apply Hst|by apply Hit].
 Qed.
 
 Lemma val_g_monotone : monotone Val.le Val_g.
@@ -150,9 +150,9 @@ intros v [[[i ls] ab] ps] [[[i' ls'] ab'] ps'] Hx Hle.
 unfold Val.le, Val.E3.le, Val.E2.le in Hle; simpl in Hle.
 destruct Hle as [[[Hi Hls] Hab] Hps].
 inversion Hx; subst.
-- apply Val_g_z. by apply Itv.gamma_monotone with i.
+- apply Val_g_z. eapply Itv.gamma_monotone; [by apply Hi0|by apply Hi].
 - apply Val_g_loc. by apply PowLoc.le_mem_true with ls.
-- apply Val_g_ab. by apply arrayBlk_g_monotone with ab.
+- apply Val_g_ab. by eapply arrayBlk_g_monotone; eauto.
 - apply Val_g_proc. by apply PowProc.le_mem_true with ps.
 Qed.
 
@@ -283,28 +283,73 @@ Import RunOnly RunOnly.SemMem RunOnly.SemEval.
 Load MemGCommon.
 Load MemPfCommon.
 
+Local Open Scope Z.
+Local Open Scope sumbool.
+
+Lemma val_g_z_inv :
+  forall z i ls ab ps,
+    Val_g (DomCon.val_of_z z) (i, ls, ab, ps) -> Itv.gamma z i.
+Proof.
+intros. inversion H; subst; by auto.
+Qed.
+
+Lemma val_g_z_gamma :
+  forall z av (Hv : Val_g (DomCon.val_of_z z) av),
+    Itv.gamma z (itv_of_val av).
+Proof.
+intros z [[[i ls] ab] ps] Hv. exact (val_g_z_inv Hv).
+Qed.
+
+Lemma val_g_z_itv_non_bot :
+  forall z av (Hv : Val_g (DomCon.val_of_z z) av),
+    ~ Itv.eq (itv_of_val av) Itv.bot.
+Proof.
+intros z [[[i ls] ab] ps] Hv.
+apply (@Itv.non_bot z i).
+exact (val_g_z_inv Hv).
+Qed.
+
+Lemma val_g_z_val_non_bot :
+  forall z av (Hv : Val_g (DomCon.val_of_z z) av),
+    ~ Val.eq av Val.bot.
+Proof.
+intros z [[[i ls] ab] ps] Hv Heq.
+destruct Heq as [[[Hi _] _] _].
+eapply val_g_z_itv_non_bot; [by apply Hv|by apply Hi].
+Qed.
+
+Lemma gamma_of_ints :
+  forall z lb ub (Hz : lb <= z <= ub), Itv.gamma z (Itv.of_ints lb ub).
+Proof.
+intros. unfold Itv.of_ints.
+destruct (Z_le_dec lb ub); [constructor; constructor; lia|lia].
+Qed.
+
+Lemma gamma_join_left :
+  forall z x y (Hx : Itv.gamma z x), Itv.gamma z (Itv.join x y).
+Proof. i. eapply Itv.gamma_monotone; [by apply Hx|by apply Itv.join_left]. Qed.
+
+Lemma gamma_join_right :
+  forall z x y (Hy : Itv.gamma z y), Itv.gamma z (Itv.join x y).
+Proof. i. eapply Itv.gamma_monotone; [by apply Hy|by apply Itv.join_right]. Qed.
+
+Lemma gamma_false_itv_eq_zero :
+  forall z i (Hz : Itv.gamma z i) (Hi : Itv.eq i Itv.false_itv), z = 0.
+Proof.
+i. assert (Itv.gamma z Itv.false_itv) as Hz0.
+{ eapply Itv.gamma_mor; [reflexivity|by apply Hi|by apply Hz]. }
+inversion Hz0; subst. inversion Hle1; inversion Hle2; lia.
+Qed.
+
 Lemma cor_eval_const :
   forall c v (Hc : SemCon.Eval_const c v), Val_g v (SemEval.eval_const c).
 Proof.
-destruct 1; constructor.
+destruct 1; unfold SemEval.eval_const; apply Val_g_z.
 - by apply Itv.cor_itv_top.
 - by apply Itv.cor_of_int.
 - by apply Itv.cor_of_int.
-- unfold Itv.of_ints. destruct (Z_le_dec lb ub); [constructor|lia].
-  + constructor; lia.
-  + constructor; lia.
+- by apply gamma_of_ints.
 - by apply Itv.cor_itv_top.
-Qed.
-
-Lemma val_g_bot_false : forall x, ~ (Val_g x Val.bot).
-Proof.
-inversion_clear 1; subst.
-- by inversion Hz.
-- by inversion Hl.
-- inversion_clear Hl; subst.
-  inversion Hab; subst.
-  by inversion Hsz.
-- by inversion Hp.
 Qed.
 
 Lemma cor_eval_uop :
@@ -312,126 +357,217 @@ Lemma cor_eval_uop :
     Val_g v' (SemEval.eval_uop op abs_v).
 Proof.
 i. unfold SemEval.eval_uop.
-destruct (Val.eq_dec abs_v Val.bot)
-; [ eapply val_g_mor in Habs
-    ; [by apply val_g_bot_false in Habs|reflexivity|by apply e] |].
-inversion Hu; subst.
-- inversion Habs; subst. constructor.
-  rewrite <- Z.sub_0_l. apply Itv.cor_minus; [by apply Itv.cor_of_int|by auto].
-- inversion Habs; subst. constructor.
-  unfold Itv.b_not_itv. apply Itv.unknown_unary_prop; i.
-  inversion Hz; subst. by inversion FH.
-- inversion Habs; subst. constructor.
-  eapply Itv.not_itv_prop1; [by apply Ht|by auto].
-- inversion Habs; subst. constructor.
-  eapply Itv.not_itv_prop2; by auto.
+destruct (Val.eq_dec abs_v Val.bot) as [Hbot|Hnbot].
+{ inversion Hu; subst; exfalso; eapply val_g_z_val_non_bot; eauto. }
+inversion Hu; subst; apply Val_g_z.
+- replace (- z)%Z with (0 - z)%Z by lia.
+  apply Itv.cor_minus; [by apply Itv.cor_of_int|by eapply val_g_z_gamma].
+- apply Itv.unknown_unary_prop.
+  eapply val_g_z_itv_non_bot. by apply Habs.
+- eapply (@Itv.not_itv_prop1 z); [by auto|exact (val_g_z_gamma Habs)].
+- apply Itv.not_itv_prop2. exact (val_g_z_gamma Habs).
 Qed.
 
-Lemma itv_non_bot :
-  forall z abs_v (Habs : Val_g (DomCon.val_of_z z) abs_v),
-    ~ (Itv.eq (itv_of_val abs_v) Itv.bot).
+Lemma cor_and1 :
+  forall z1 z2 i1 i2
+     (Hz1n : z1 <> 0) (Hz2n : z2 <> 0)
+     (Hz1 : Itv.gamma z1 i1) (Hz2 : Itv.gamma z2 i2),
+    Itv.gamma 1 (Itv.and_itv i1 i2).
 Proof.
-i. destruct abs_v as [[[i ls] ab] ps].
-inversion Habs; subst.
-eapply Itv.non_bot; [by apply Hz|by apply FH].
+i. unfold Itv.and_itv.
+destruct (Itv.eq_dec i1 Itv.Bot ||| Itv.eq_dec i2 Itv.Bot) as [[Hbot|Hbot]|_].
+{ eapply Itv.non_bot in Hz1; by eauto. }
+{ eapply Itv.non_bot in Hz2; by eauto. }
+destruct (Itv.eq_dec i1 Itv.false_itv ||| Itv.eq_dec i2 Itv.false_itv)
+  as [[Hfalse|Hfalse]|_].
+- assert (z1 = 0) by (eapply gamma_false_itv_eq_zero; eauto). by auto.
+- assert (z2 = 0) by (eapply gamma_false_itv_eq_zero; eauto). by auto.
+- destruct (~~ Itv.le_dec Itv.false_itv i1 &&&
+            ~~ Itv.le_dec Itv.false_itv i2)
+  ; [by apply Itv.true_itv_prop|by apply Itv.unknown_bool_prop1].
 Qed.
 
-Lemma itv_non_zero :
-  forall z abs_v (Ht : z <> 0%Z) (Habs : Val_g (DomCon.val_of_z z) abs_v),
-    ~ (Itv.eq (itv_of_val abs_v) Itv.zero).
+Lemma cor_and0_l :
+  forall z i1 i2 (Hz1 : Itv.gamma 0 i1) (Hz2 : Itv.gamma z i2),
+    Itv.gamma 0 (Itv.and_itv i1 i2).
 Proof.
-inversion 2; subst. s; i.
-exploit Itv.gamma_mor; [reflexivity|by apply FH|by apply Hz|].
-inversion 1; subst.
-elim Ht. inversion Hle1; inversion Hle2. lia.
+i. unfold Itv.and_itv.
+destruct (Itv.eq_dec i1 Itv.Bot ||| Itv.eq_dec i2 Itv.Bot) as [[Hbot|Hbot]|_].
+{ eapply Itv.non_bot in Hz1; by eauto. }
+{ eapply Itv.non_bot in Hz2; by eauto. }
+destruct (Itv.eq_dec i1 Itv.false_itv ||| Itv.eq_dec i2 Itv.false_itv)
+; [by apply Itv.false_itv_prop|].
+destruct (~~ Itv.le_dec Itv.false_itv i1 &&&
+          ~~ Itv.le_dec Itv.false_itv i2) as [[Hzero _]|_].
+{ elim Hzero. by apply Itv.false_itv1. }
+by apply Itv.unknown_bool_prop0.
 Qed.
 
-Local Open Scope sumbool.
+Lemma cor_and0_r :
+  forall z i1 i2 (Hz1 : Itv.gamma z i1) (Hz2 : Itv.gamma 0 i2),
+    Itv.gamma 0 (Itv.and_itv i1 i2).
+Proof.
+i. unfold Itv.and_itv.
+destruct (Itv.eq_dec i1 Itv.Bot ||| Itv.eq_dec i2 Itv.Bot) as [[Hbot|Hbot]|_].
+{ eapply Itv.non_bot in Hz1; by eauto. }
+{ eapply Itv.non_bot in Hz2; by eauto. }
+destruct (Itv.eq_dec i1 Itv.false_itv ||| Itv.eq_dec i2 Itv.false_itv)
+; [by apply Itv.false_itv_prop|].
+destruct (~~ Itv.le_dec Itv.false_itv i1 &&&
+          ~~ Itv.le_dec Itv.false_itv i2) as [[_ Hzero]|_].
+{ elim Hzero. by apply Itv.false_itv1. }
+by apply Itv.unknown_bool_prop0.
+Qed.
+
+Lemma cor_or1_l :
+  forall z1 z2 i1 i2
+     (Hz1n : z1 <> 0)
+     (Hz1 : Itv.gamma z1 i1) (Hz2 : Itv.gamma z2 i2),
+    Itv.gamma 1 (Itv.or_itv i1 i2).
+Proof.
+i. unfold Itv.or_itv.
+destruct (Itv.eq_dec i1 Itv.Bot ||| Itv.eq_dec i2 Itv.Bot) as [[Hbot|Hbot]|_].
+{ eapply Itv.non_bot in Hz1; by eauto. }
+{ eapply Itv.non_bot in Hz2; by eauto. }
+destruct (Itv.eq_dec i1 Itv.false_itv &&& Itv.eq_dec i2 Itv.false_itv)
+  as [[Hfalse _]|_].
+{
+  assert (z1 = 0) by (eapply gamma_false_itv_eq_zero; eauto). by auto. }
+destruct (~~ Itv.le_dec Itv.false_itv i1 |||
+          ~~ Itv.le_dec Itv.false_itv i2)
+; [by apply Itv.true_itv_prop|by apply Itv.unknown_bool_prop1].
+Qed.
+
+Lemma cor_or1_r :
+  forall z1 z2 i1 i2
+     (Hz2n : z2 <> 0)
+     (Hz1 : Itv.gamma z1 i1) (Hz2 : Itv.gamma z2 i2),
+    Itv.gamma 1 (Itv.or_itv i1 i2).
+Proof.
+i. unfold Itv.or_itv.
+destruct (Itv.eq_dec i1 Itv.Bot ||| Itv.eq_dec i2 Itv.Bot) as [[Hbot|Hbot]|_].
+{ eapply Itv.non_bot in Hz1; by eauto. }
+{ eapply Itv.non_bot in Hz2; by eauto. }
+destruct (Itv.eq_dec i1 Itv.false_itv &&& Itv.eq_dec i2 Itv.false_itv)
+  as [[_ Hfalse]|_].
+{
+  assert (z2 = 0) by (eapply gamma_false_itv_eq_zero; eauto). by auto. }
+destruct (~~ Itv.le_dec Itv.false_itv i1 |||
+          ~~ Itv.le_dec Itv.false_itv i2)
+; [by apply Itv.true_itv_prop|by apply Itv.unknown_bool_prop1].
+Qed.
+
+Lemma cor_or0 :
+  forall i1 i2 (Hz1 : Itv.gamma 0 i1) (Hz2 : Itv.gamma 0 i2),
+    Itv.gamma 0 (Itv.or_itv i1 i2).
+Proof.
+i. unfold Itv.or_itv.
+destruct (Itv.eq_dec i1 Itv.Bot ||| Itv.eq_dec i2 Itv.Bot) as [[Hbot|Hbot]|_].
+{ eapply Itv.non_bot in Hz1; by eauto. }
+{ eapply Itv.non_bot in Hz2; by eauto. }
+destruct (Itv.eq_dec i1 Itv.false_itv &&& Itv.eq_dec i2 Itv.false_itv)
+; [by apply Itv.false_itv_prop|].
+destruct (~~ Itv.le_dec Itv.false_itv i1 |||
+          ~~ Itv.le_dec Itv.false_itv i2) as [[Hzero|Hzero]|_].
+{ elim Hzero. by apply Itv.false_itv1. }
+{ elim Hzero. by apply Itv.false_itv1. }
+by apply Itv.unknown_bool_prop0.
+Qed.
 
 Lemma cor_plus_offset :
-  forall step alloc o sz st z ab i
-     (Hab : ArrayBlk_g (step, alloc, (o, sz, st)) ab) (Hz : Itv_g z i),
-    ArrayBlk_g (step, alloc, ((o + z)%Z, sz, st)) (ArrayBlk.plus_offset ab i).
+  forall step alloc o sz st z idx ab
+     (Hz : Itv.gamma z idx)
+     (Hab : ArrayBlk_g (step, alloc, (o, sz, st)) ab),
+    ArrayBlk_g (step, alloc, ((o + z)%Z, sz, st))
+               (ArrayBlk.plus_offset ab idx).
 Proof.
-inversion 1; subst; i.
-apply ArrayBlk_g_intro with (o':=Itv.plus o' i) (st':=st') (sz':=sz')
-; [by apply Itv.cor_plus|by auto|by auto|].
+intros. inversion Hab; subst.
 unfold ArrayBlk.plus_offset.
-destruct (Itv.eq_dec i Itv.bot)
-; [exploit Itv.non_bot; [by apply Hz|by apply e|by auto]|].
-erewrite ArrayBlk.map_1; [| |by apply Hab0].
-- unfold ArrInfo.plus_offset.
-  destruct (Itv.eq_dec Itv.bot o'); [|reflexivity].
-  exploit Itv.non_bot; [by apply Ho|by apply Itv.eq_sym|by auto].
-- unfold ArrInfo.plus_offset. simpl.
-  destruct (Itv.eq_dec Itv.bot Itv.bot)
-  ; [by auto|elim f0; by apply Itv.eq_refl].
+destruct (Itv.eq_dec idx Itv.bot) as [Hidx|Hidx].
+{ exfalso. eapply Itv.non_bot; [by apply Hz|by apply Hidx]. }
+econstructor.
+- erewrite ArrayBlk.map_1; [| |by apply Hfind].
+  + unfold ArrInfo.plus_offset, ArrInfo.make.
+    destruct (Itv.eq_dec Itv.bot io) as [Hio|Hio].
+    * exfalso. eapply Itv.non_bot; [by apply Ho|by apply Itv.eq_sym].
+    * reflexivity.
+  + unfold ArrInfo.plus_offset, ArrInfo.bot; simpl.
+    destruct (Itv.eq_dec Itv.bot Itv.bot) as [_|Hneq]
+    ; [reflexivity|elim Hneq; by apply Itv.eq_refl].
+- by apply Itv.cor_plus.
+- by apply Hsz.
+- by apply Hst.
 Qed.
 
 Lemma cor_minus_offset :
-  forall step alloc o sz st z ab i
-     (Hab : ArrayBlk_g (step, alloc, (o, sz, st)) ab) (Hz : Itv_g z i),
-    ArrayBlk_g (step, alloc, ((o - z)%Z, sz, st)) (ArrayBlk.minus_offset ab i).
+  forall step alloc o sz st z idx ab
+     (Hz : Itv.gamma z idx)
+     (Hab : ArrayBlk_g (step, alloc, (o, sz, st)) ab),
+    ArrayBlk_g (step, alloc, ((o - z)%Z, sz, st))
+               (ArrayBlk.minus_offset ab idx).
 Proof.
-inversion 1; subst; i.
-apply ArrayBlk_g_intro with (o':=Itv.minus o' i) (st':=st') (sz':=sz')
-; [by apply Itv.cor_minus|by auto|by auto|].
+intros. inversion Hab; subst.
 unfold ArrayBlk.minus_offset.
-destruct (Itv.eq_dec i Itv.bot)
-; [exploit Itv.non_bot; [by apply Hz|by apply e|by auto]|].
-erewrite ArrayBlk.map_1; [| |by apply Hab0].
-- unfold ArrInfo.minus_offset.
-  destruct (Itv.eq_dec Itv.bot o'); [|reflexivity].
-  exploit Itv.non_bot; [by apply Ho|by apply Itv.eq_sym|by auto].
-- unfold ArrInfo.minus_offset. simpl.
-  destruct (Itv.eq_dec Itv.bot Itv.bot)
-  ; [by auto|elim f0; by apply Itv.eq_refl].
+destruct (Itv.eq_dec idx Itv.bot) as [Hidx|Hidx].
+{ exfalso. eapply Itv.non_bot; [by apply Hz|by apply Hidx]. }
+econstructor.
+- erewrite ArrayBlk.map_1; [| |by apply Hfind].
+  + unfold ArrInfo.minus_offset, ArrInfo.make.
+    destruct (Itv.eq_dec Itv.bot io) as [Hio|Hio].
+    * exfalso. eapply Itv.non_bot; [by apply Ho|by apply Itv.eq_sym].
+    * reflexivity.
+  + unfold ArrInfo.minus_offset, ArrInfo.bot; simpl.
+    destruct (Itv.eq_dec Itv.bot Itv.bot) as [_|Hneq]
+    ; [reflexivity|elim Hneq; by apply Itv.eq_refl].
+- by apply Itv.cor_minus.
+- by apply Hsz.
+- by apply Hst.
 Qed.
 
 Lemma cor_plus_pi :
-  forall step alloc o sz st z v i
+  forall step alloc o sz st z idx v
+     (Hz : Itv.gamma z idx)
      (Hv : Val_g
-                (DomCon.val_of_loc
-                   (DomCon.loc_of_alloc
-                      step alloc (o, sz, st) DomCon.Fields.nil))
-                v)
-     (Hz : Itv_g z i),
+             (DomCon.val_of_loc
+                (DomCon.loc_of_alloc
+                   step alloc (o, sz, st) DomCon.Fields.nil))
+             v),
     Val_g
       (DomCon.val_of_loc
          (DomCon.loc_of_alloc step alloc ((o + z)%Z, sz, st) DomCon.Fields.nil))
       (Val.join
          (SemEval.array_loc_of_val v)
-         (val_of_array (ArrayBlk.plus_offset (array_of_val v) i))).
+         (val_of_array (ArrayBlk.plus_offset (array_of_val v) idx))).
 Proof.
 i; inversion_clear Hv; subst.
 - eapply val_g_monotone; [apply Val_g_loc|by apply Val.join_left].
   unfold DomCon.loc_of_alloc, Loc_g, VarRegion_g in *.
   apply PowLoc.filter1; [by apply SemEval.is_array_loc_mor|by apply Hl|by auto].
 - eapply val_g_monotone; [apply Val_g_ab|by apply Val.join_right].
-  by apply cor_plus_offset.
+  by eapply cor_plus_offset.
 Qed.
 
 Lemma cor_minus_pi :
-  forall step alloc o sz st z v i
+  forall step alloc o sz st z idx v
+     (Hz : Itv.gamma z idx)
      (Hv : Val_g
-                (DomCon.val_of_loc
-                   (DomCon.loc_of_alloc
-                      step alloc (o, sz, st) DomCon.Fields.nil))
-                v)
-     (Hz : Itv_g z i),
+             (DomCon.val_of_loc
+                (DomCon.loc_of_alloc
+                   step alloc (o, sz, st) DomCon.Fields.nil))
+             v),
     Val_g
       (DomCon.val_of_loc
          (DomCon.loc_of_alloc step alloc ((o - z)%Z, sz, st) DomCon.Fields.nil))
       (Val.join
          (SemEval.array_loc_of_val v)
-         (val_of_array (ArrayBlk.minus_offset (array_of_val v) i))).
+         (val_of_array (ArrayBlk.minus_offset (array_of_val v) idx))).
 Proof.
 i; inversion_clear Hv; subst.
 - eapply val_g_monotone; [apply Val_g_loc|by apply Val.join_left].
   unfold DomCon.loc_of_alloc, Loc_g, VarRegion_g in *.
   apply PowLoc.filter1; [by apply SemEval.is_array_loc_mor|by apply Hl|by auto].
 - eapply val_g_monotone; [apply Val_g_ab|by apply Val.join_right].
-  by apply cor_minus_offset.
+  by eapply cor_minus_offset.
 Qed.
 
 Lemma cor_eval_bop :
@@ -439,201 +575,90 @@ Lemma cor_eval_bop :
      (Habs1 : Val_g v1 abs_v1) (Habs2 : Val_g v2 abs_v2),
     Val_g v' (SemEval.eval_bop op abs_v1 abs_v2).
 Proof.
-inversion_clear 1; subst.
-{                               (* PlusA *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2. by apply Itv.cor_plus.
-}
-{                               (* PlusPI *)
-i. unfold SemEval.eval_bop.
-inversion_clear Habs2; subst.
-by apply cor_plus_pi.
-}
-{                               (* IndexPI *)
-i. unfold SemEval.eval_bop.
-inversion_clear Habs2; subst.
-by apply cor_plus_pi.
-}
-{                               (* MinusA *)
-i. unfold SemEval.eval_bop.
-inversion_clear Habs1; inversion_clear Habs2.
-constructor; by apply Itv.cor_minus.
-}
-{                               (* MinusPI *)
-i. unfold SemEval.eval_bop.
-inversion_clear Habs2; subst.
-by apply cor_minus_pi.
-}
-{                               (* Mult *)
-i. unfold SemEval.eval_bop.
-inversion_clear Habs1; inversion_clear Habs2. constructor.
-by apply Itv.times_prop.
-}
-{                               (* Div *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-by apply Itv.divide_prop.
-}
-{                               (* Mod *)
-i. unfold SemEval.eval_bop, Itv.mod_itv.
-constructor. apply Itv.unknown_binary_prop; i.
-- by apply itv_non_bot in Habs1.
-- by apply itv_non_bot in Habs2.
-}
-{                               (* Shiftlt *)
-i. unfold SemEval.eval_bop, Itv.l_shift_itv.
-constructor. apply Itv.unknown_binary_prop; i.
-- by apply itv_non_bot in Habs1.
-- by apply itv_non_bot in Habs2.
-}
-{                               (* Shiftrt *)
-i. unfold SemEval.eval_bop, Itv.r_shift_itv.
-constructor. apply Itv.unknown_binary_prop; i.
-- by apply itv_non_bot in Habs1.
-- by apply itv_non_bot in Habs2.
-}
-{                               (* Lt *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-by apply Itv.cor_lt1 with (z1:=z1) (z2:=z2).
-}
-{                               (* Lt *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-by apply Itv.cor_lt0 with (z1:=z1) (z2:=z2).
-}
-{                               (* Gt *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-unfold Itv.gt_itv.
-apply Itv.cor_lt1 with (z1:=z2) (z2:=z1); [lia|by auto|by auto].
-}
-{                               (* Gt *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-unfold Itv.gt_itv.
-apply Itv.cor_lt0 with (z1:=z2) (z2:=z1); [intro; elim Hle; lia|by auto|by auto].
-}
-{                               (* Le *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-apply Itv.cor_le1 with (z1:=z1) (z2:=z2); by auto.
-}
-{
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-apply Itv.cor_le0 with (z1:=z1) (z2:=z2); by auto.
-}
-{                               (* Ge *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-unfold Itv.ge_itv.
-apply Itv.cor_le1 with (z1:=z2) (z2:=z1); [lia|by auto|by auto].
-}
-{                               (* Ge *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-unfold Itv.ge_itv.
-apply Itv.cor_le0 with (z1:=z2) (z2:=z1); [intro; elim Hlt; lia|by auto|by auto].
-}
-{                               (* Eq *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-apply Itv.cor_eq1 with (z:=z2); by auto.
-}
-{                               (* Eq *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-apply Itv.cor_eq0 with (z1:=z1) (z2:=z2); by auto.
-}
-{                               (* Ne *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-apply Itv.cor_ne1 with (z1:=z1) (z2:=z2); by auto.
-}
-{                               (* Ne *)
-i. unfold SemEval.eval_bop. constructor.
-inversion_clear Habs1; inversion_clear Habs2.
-apply Itv.cor_ne0 with (z:=z2); by auto.
-}
-{                               (* BAnd *)
-i. unfold SemEval.eval_bop, Itv.b_and_itv.
-constructor. apply Itv.unknown_binary_prop; i.
-- by apply itv_non_bot in Habs1.
-- by apply itv_non_bot in Habs2.
-}
-{                               (* BXor *)
-i. unfold SemEval.eval_bop, Itv.b_xor_itv.
-constructor. apply Itv.unknown_binary_prop; i.
-- by apply itv_non_bot in Habs1.
-- by apply itv_non_bot in Habs2.
-}
-{                               (* BOr *)
-i. unfold SemEval.eval_bop, Itv.b_or_itv.
-constructor. apply Itv.unknown_binary_prop; i.
-- by apply itv_non_bot in Habs1.
-- by apply itv_non_bot in Habs2.
-}
-{                               (* LAnd *)
-i. unfold SemEval.eval_bop, Itv.and_itv.
-dest_if_dec; [|dest_if_dec; [|dest_if_dec]].
-- apply False_ind. destruct o; by eauto using itv_non_bot.
-- apply False_ind. destruct Hz. destruct o as [o|o].
-  + by apply (itv_non_zero (z:=z1)) in o.
-  + by apply (itv_non_zero (z:=z2)) in o.
-- constructor. by apply Itv.true_itv_prop.
-- constructor. by apply Itv.unknown_bool_prop1.
-}
-{                               (* LAnd *)
-i. unfold SemEval.eval_bop, Itv.and_itv.
-dest_if_dec; [|dest_if_dec; [|dest_if_dec]].
-- apply False_ind. destruct o; by eauto using itv_non_bot.
-- constructor. by apply Itv.false_itv_prop.
-- destruct a1 as [a1 _]; elim a1. inversion Habs1; subst. by apply Itv.false_itv1.
-- constructor. by apply Itv.unknown_bool_prop0.
-}
-{                               (* LAnd *)
-i. unfold SemEval.eval_bop, Itv.and_itv.
-dest_if_dec; [|dest_if_dec; [|dest_if_dec]].
-- apply False_ind. destruct o; by eauto using itv_non_bot.
-- constructor. by apply Itv.false_itv_prop.
-- destruct a1 as [_ a1]; elim a1. inversion Habs2; subst. by apply Itv.false_itv1.
-- constructor. by apply Itv.unknown_bool_prop0.
-}
-{                               (* LOr *)
-i. unfold SemEval.eval_bop, Itv.or_itv.
-dest_if_dec; [|dest_if_dec; [|dest_if_dec]].
-- apply False_ind. destruct o; by eauto using itv_non_bot.
-- destruct a0; by apply itv_non_zero in Habs1.
-- constructor. by apply Itv.true_itv_prop.
-- constructor. by apply Itv.unknown_bool_prop1.
-}
-{                               (* LOr *)
-i. unfold SemEval.eval_bop, Itv.or_itv.
-dest_if_dec; [|dest_if_dec; [|dest_if_dec]].
-- apply False_ind. destruct o; by eauto using itv_non_bot.
-- destruct a0; by apply itv_non_zero in Habs2.
-- constructor. by apply Itv.true_itv_prop.
-- constructor. by apply Itv.unknown_bool_prop1.
-}
-{                               (* LOr *)
-i. unfold SemEval.eval_bop, Itv.or_itv.
-dest_if_dec; [|dest_if_dec; [|dest_if_dec]].
-- apply False_ind. destruct o; by eauto using itv_non_bot.
-- constructor. by apply Itv.false_itv_prop.
-- destruct o0 as [o0|o0]; elim o0.
-  + inversion Habs1; subst; by apply Itv.false_itv1.
-  + inversion Habs2; subst; by apply Itv.false_itv1.
-- constructor. by apply Itv.unknown_bool_prop0.
-}
+inversion_clear 1; subst; i; unfold SemEval.eval_bop.
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. by apply Itv.cor_plus. }
+{ inversion Habs2; subst. by eapply cor_plus_pi. }
+{ inversion Habs2; subst. by eapply cor_plus_pi. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. by apply Itv.cor_minus. }
+{ inversion Habs2; subst. by eapply cor_minus_pi. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. by apply Itv.times_prop. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. by apply Itv.divide_prop. }
+{ apply Val_g_z. apply Itv.unknown_binary_prop.
+  - eapply val_g_z_itv_non_bot. by apply Habs1.
+  - eapply val_g_z_itv_non_bot. by apply Habs2. }
+{ apply Val_g_z. apply Itv.unknown_binary_prop.
+  - eapply val_g_z_itv_non_bot. by apply Habs1.
+  - eapply val_g_z_itv_non_bot. by apply Habs2. }
+{ apply Val_g_z. apply Itv.unknown_binary_prop.
+  - eapply val_g_z_itv_non_bot. by apply Habs1.
+  - eapply val_g_z_itv_non_bot. by apply Habs2. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. eapply Itv.cor_lt1; eauto. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. eapply Itv.cor_lt0; eauto. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. unfold Itv.gt_itv.
+  eapply (@Itv.cor_lt1 z2 z1); [lia|exact (val_g_z_gamma Habs2)|exact (val_g_z_gamma Habs1)]. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. unfold Itv.gt_itv.
+  eapply (@Itv.cor_lt0 z2 z1); [intro H; apply Hle; lia|exact (val_g_z_gamma Habs2)|exact (val_g_z_gamma Habs1)]. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. eapply Itv.cor_le1; eauto. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. eapply Itv.cor_le0; eauto. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. unfold Itv.ge_itv.
+  eapply (@Itv.cor_le1 z2 z1); [lia|exact (val_g_z_gamma Habs2)|exact (val_g_z_gamma Habs1)]. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. unfold Itv.ge_itv.
+  eapply (@Itv.cor_le0 z2 z1); [intro H; apply Hlt; lia|exact (val_g_z_gamma Habs2)|exact (val_g_z_gamma Habs1)]. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. subst. eapply Itv.cor_eq1; eauto. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. eapply Itv.cor_eq0; eauto. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. eapply Itv.cor_ne1; eauto. }
+{ inversion Habs1; subst; inversion Habs2; subst.
+  apply Val_g_z. subst. eapply Itv.cor_ne0; eauto. }
+{ apply Val_g_z. apply Itv.unknown_binary_prop.
+  - eapply val_g_z_itv_non_bot. by apply Habs1.
+  - eapply val_g_z_itv_non_bot. by apply Habs2. }
+{ apply Val_g_z. apply Itv.unknown_binary_prop.
+  - eapply val_g_z_itv_non_bot. by apply Habs1.
+  - eapply val_g_z_itv_non_bot. by apply Habs2. }
+{ apply Val_g_z. apply Itv.unknown_binary_prop.
+  - eapply val_g_z_itv_non_bot. by apply Habs1.
+  - eapply val_g_z_itv_non_bot. by apply Habs2. }
+{ apply Val_g_z. destruct Hz as [Hz1n Hz2n].
+  eapply cor_and1; [by apply Hz1n|by apply Hz2n
+                   |exact (val_g_z_gamma Habs1)|exact (val_g_z_gamma Habs2)]. }
+{ apply Val_g_z.
+  eapply cor_and0_l; [exact (val_g_z_gamma Habs1)|exact (val_g_z_gamma Habs2)]. }
+{ apply Val_g_z.
+  eapply cor_and0_r; [exact (val_g_z_gamma Habs1)|exact (val_g_z_gamma Habs2)]. }
+{ apply Val_g_z.
+  eapply cor_or1_l; [by apply Hz|exact (val_g_z_gamma Habs1)|exact (val_g_z_gamma Habs2)]. }
+{ apply Val_g_z.
+  eapply cor_or1_r; [by apply Hz|exact (val_g_z_gamma Habs1)|exact (val_g_z_gamma Habs2)]. }
+{ apply Val_g_z. apply cor_or0; [exact (val_g_z_gamma Habs1)|exact (val_g_z_gamma Habs2)]. }
 Qed.
 
 Local Close Scope sumbool.
 
-Lemma eval_zero :
-  forall abs_v (Habs : Val_g (DomCon.val_of_z 0) abs_v),
-    Itv.le Itv.zero (DomAbs.itv_of_val abs_v).
-Proof. inversion 1; inversion Hz; subst. by constructor. Qed.
+Lemma arrinfo_make_not_bot :
+  forall o sz st io is it
+     (Ho : Itv.gamma o io) (Hsz : Itv.gamma sz is) (Hst : Itv.gamma st it),
+    ~ ArrInfo.eq ArrInfo.bot (ArrInfo.make io is it).
+Proof.
+intros o sz st io is it Ho Hsz Hst Heq.
+unfold ArrInfo.eq, ArrInfo.bot, ArrInfo.make in Heq; simpl in Heq.
+destruct Heq as [[Hio _] _].
+eapply (@Itv.non_bot o io); [by apply Ho|by apply Itv.eq_sym].
+Qed.
 
 Lemma cor_cast :
   forall step alloc o o' sz sz' st st' ab
@@ -642,22 +667,24 @@ Lemma cor_cast :
          (Hab : ArrayBlk_g (step, alloc, (o, sz, st)) ab),
     ArrayBlk_g (step, alloc, (o', sz', st')) (ArrayBlk.cast_array_int st' ab).
 Proof.
-inversion 3; subst. econstructor.
-- apply Itv.divide_prop; [apply Itv.times_prop|].
-  + by apply Ho.
-  + by apply Hst.
+intros. inversion Hab; subst.
+econstructor.
+- unfold ArrayBlk.cast_array_int, ArrayBlk.cast_array.
+  erewrite ArrayBlk.map_1; [| |by apply Hfind].
+  + unfold ArrInfo.make.
+    destruct (Itv.eq_dec Itv.bot it) as [Hit|Hit].
+    * exfalso. eapply Itv.non_bot; [by apply Hst|by apply Itv.eq_sym].
+    * reflexivity.
+  + unfold ArrInfo.bot. simpl.
+    destruct (Itv.eq_dec Itv.bot Itv.bot) as [_|Hneq]
+    ; [reflexivity|elim Hneq; by apply Itv.eq_refl].
+- apply Itv.divide_prop.
+  + by apply Itv.times_prop.
   + by apply Itv.cor_of_int.
-- apply Itv.divide_prop; [apply Itv.times_prop|].
-  + by apply Hsz.
-  + by apply Hst.
+- apply Itv.divide_prop.
+  + by apply Itv.times_prop.
   + by apply Itv.cor_of_int.
 - by apply Itv.cor_of_int.
-- unfold ArrayBlk.cast_array_int, ArrayBlk.cast_array.
-  rewrite ArrayBlk.map_1 with (v:=(o'0, sz'0, st'0)); [| |by auto].
-  + destruct (Itv.eq_dec Itv.bot st'0); [|by auto].
-    apply Itv.non_bot in Hst; [by elim Hst|by apply Itv.eq_sym].
-  + s; destruct (Itv.eq_dec Itv.bot Itv.bot)
-    ; [reflexivity|by elim f; apply Itv.eq_refl].
 Qed.
 
 Lemma cor_pow_loc_of_array :
@@ -667,8 +694,7 @@ Lemma cor_pow_loc_of_array :
 Proof.
 inversion 1; subst; s.
 unfold ArrayBlk.pow_loc_of_array.
-eapply ArrayBlk.foldi_1
-with (teq:=PowLoc.eq) (k:=Allocsite_g a) (v:=(o', sz', st')).
+eapply ArrayBlk.foldi_1 with (teq:=PowLoc.eq) (k:=Allocsite_g a).
 - constructor
   ; [ intros ?; by apply PowLoc.eq_refl
     | intros ? ? ?; by apply PowLoc.eq_trans
@@ -677,11 +703,10 @@ with (teq:=PowLoc.eq) (k:=Allocsite_g a) (v:=(o', sz', st')).
   + rewrite PowLoc.mem_mor
     ; [by apply Hmem|by apply Loc.eq_refl|by apply PowLoc.eq_sym].
   + rewrite PowLoc.mem_mor; [by apply Hmem|by apply Loc.eq_refl|by auto].
-- rewrite Hab; by apply ArrInfo.eq_refl.
-- destruct (ArrInfo.eq_dec ArrInfo.bot (o', sz', st'))
-  ; [ inversion e; simpl in H0; apply Itv.non_bot in Hst
-      ; [by elim Hst|by apply Itv.eq_sym] |].
-  i; apply DomBasic.PowLoc.mem_add_1; by apply Loc.eq_refl.
+- rewrite Hfind. by apply ArrInfo.eq_refl.
+- destruct (ArrInfo.eq_dec ArrInfo.bot (ArrInfo.make io is it)).
+  + exfalso. eapply (@arrinfo_make_not_bot o sz st io is it); eauto.
+  + i; apply DomBasic.PowLoc.mem_add_1; by apply Loc.eq_refl.
 - i; destruct (ArrInfo.eq_dec ArrInfo.bot v)
   ; [by apply PowLoc.eq_refl|by elim f].
 - i; destruct (ArrInfo.eq_dec ArrInfo.bot v); [by auto|].
@@ -746,7 +771,7 @@ inversion 1; subst; clear Hl.
   unfold ArrayBlk.pow_loc_of_struct_w_field.
   inversion Hl0; subst; clear Hl0.
   apply ArrayBlk.foldi_1
-  with (teq:=PowLoc.eq) (k:=Allocsite_g a) (v:=(o', sz', st')).
+  with (teq:=PowLoc.eq) (k:=Allocsite_g a) (v:=ArrInfo.make io is it).
   + constructor
     ; [ intros ?; by apply PowLoc.eq_refl
       | intros ? ? ?; by apply PowLoc.eq_trans
@@ -757,12 +782,12 @@ inversion 1; subst; clear Hl.
     * rewrite DomBasic.PowLoc.mem_mor
       ; [by apply Hmem|by apply Loc.eq_refl|by auto].
   + unfold DomAbs.array_of_val.
-    rewrite <- Hab; by apply ArrInfo.eq_refl.
-  + i; dest_if_dec
-    ; [ inversion e; simpl in H0; apply Itv.non_bot in Hst
-        ; [by elim Hst|by auto] |].
-    apply PowLoc.mem_add_1.
-    constructor; split; [by apply VarAllocsite.eq_refl|by apply cor_fields_app].
+    rewrite <- Hfind; by apply ArrInfo.eq_refl.
+  + i; dest_if_dec.
+    * exfalso. eapply (@arrinfo_make_not_bot o sz st io is it); eauto.
+      by apply ArrInfo.eq_sym.
+    * apply PowLoc.mem_add_1.
+      constructor; split; [by apply VarAllocsite.eq_refl|by apply cor_fields_app].
   + i. dest_if_dec. elim f0; by apply ArrInfo.eq_sym.
   + i; dest_if_dec. by apply PowLoc.mem_add_3.
   + i. destruct (ArrInfo.eq_dec v1 ArrInfo.bot).
@@ -779,37 +804,27 @@ inversion 1; subst; clear Hl.
 Qed.
 
 Lemma cor_plus_offset_val :
-  forall step alloc o idx sz st abs_idx abs_v
-         (Habs : Val_g
-                   (DomCon.val_of_loc
-                      (DomCon.loc_of_alloc
-                         step alloc (o, sz, st) DomCon.Fields.nil))
-                   abs_v)
-         (Hidx : Itv_g idx abs_idx),
+  forall step alloc o idx sz st abs_v idx_itv
+     (Hidx : Itv.gamma idx idx_itv)
+     (Habs : Val_g
+               (DomCon.val_of_loc
+                  (DomCon.loc_of_alloc
+                     step alloc (o, sz, st) DomCon.Fields.nil))
+               abs_v),
     Val_g
       (DomCon.val_of_loc
          (DomCon.loc_of_alloc
             step alloc ((o + idx)%Z, sz, st) DomCon.Fields.nil))
-      (DomAbs.modify_array
-         abs_v (ArrayBlk.plus_offset (DomAbs.array_of_val abs_v) abs_idx)).
+      (modify_array abs_v (ArrayBlk.plus_offset (array_of_val abs_v) idx_itv)).
 Proof.
-i. unfold ArrayBlk.plus_offset.
-destruct (Itv.eq_dec abs_idx Itv.bot).
-- inversion Hidx; subst. inversion e.
-- inversion Habs; subst.
-  + apply Val_g_loc. by apply Hl.
-  + apply Val_g_ab.
-    inversion Hl; subst.
-    eapply ArrayBlk_g_intro
-    ; [ apply Itv.cor_plus; [by apply Ho|by apply Hidx]
-      | by apply Hsz
-      | by apply Hst |].
-    rewrite ArrayBlk.map_1 with (v:=(o', sz', st')).
-    * s. destruct (Itv.eq_dec Itv.bot o')
-         ; [inversion Ho; subst; inversion e|reflexivity].
-    * s. destruct (Itv.eq_dec Itv.bot Itv.bot); by auto.
-    * by auto.
+i. inversion Habs; subst.
++ apply Val_g_loc. by apply Hl.
++ unfold modify_array, DomAbs.array_of_val, DomAbs.pow_loc_of_val, DomAbs.itv_of_val,
+          DomAbs.pow_proc_of_val.
+  apply Val_g_ab. by eapply cor_plus_offset.
 Qed.
+
+Local Open Scope sumbool.
 
 Lemma cor_eval :
   forall step cn e cid callee m d abs_m
@@ -837,64 +852,269 @@ Proof.
 induction 2.
 { s. apply cor_eval_const. by apply Hc. }
 { s. eapply cor_mem_lookup; [|by apply Hm0|by apply Hm].
-eapply cor_eval_lv; [by apply Hm|by apply Hl].
+  eapply cor_eval_lv; [by apply Hm|by apply Hl].
 }
-{ s. constructor. by apply Itv.cor_of_int. }
-{ s. constructor. by apply Itv.cor_of_int. }
-{ s. constructor. by apply Itv.cor_of_int. }
-{ s. constructor. by apply Itv.cor_of_int. }
-{ s. constructor. by apply Itv.cor_itv_top. }
+{ s. apply Val_g_z. by apply Itv.cor_of_int. }
+{ s. apply Val_g_z. by apply Itv.cor_of_int. }
+{ s. apply Val_g_z. unfold string_lengthZ. by apply Itv.cor_of_int. }
+{ s. apply Val_g_z. by apply Itv.cor_of_int. }
+{ s. apply Val_g_z. by apply Itv.cor_itv_top. }
 { s. eapply cor_eval_uop; [by apply Hu|by apply IHHeval]. }
 { s. eapply cor_eval_bop; [by apply Hb|by apply IHHeval1|by apply IHHeval2]. }
-{ s. unfold MId.bind.
-match goal with [|- context[if ?c then _ else _]] => destruct c end
-; [apply False_ind; eapply itv_non_bot; [by apply IHHeval1|by apply e]|].
-match goal with [|- context[if ?c then _ else _]] => destruct c end
-; [ apply False_ind; eapply itv_non_zero
-    ; [by apply Ht|by apply IHHeval1|by apply e] |].
-match goal with [|- context[if ?c then _ else _]] => destruct c end
-; [ by apply IHHeval2 |].
-eapply val_g_monotone; [by apply IHHeval2|by apply Val.join_left].
+{ s. unfold MId.bind, MId.ret.
+  destruct (Itv.eq_dec (itv_of_val (eval Strong cn e1 abs_m)) Itv.bot) as [Hbot|Hbot].
+  - exfalso. eapply val_g_z_itv_non_bot; [by apply IHHeval1|by apply Hbot].
+  - destruct (Itv.eq_dec (itv_of_val (eval Strong cn e1 abs_m)) Itv.zero) as [Hzero|Hzero].
+    + assert (z = 0) as Hz0.
+      { eapply gamma_false_itv_eq_zero; [by apply val_g_z_gamma, IHHeval1|by apply Hzero]. }
+      by auto.
+    + destruct (~~ Itv.le_dec Itv.zero (itv_of_val (eval Strong cn e1 abs_m))) as [_|_].
+      * by apply IHHeval2.
+      * eapply val_g_monotone; [by apply IHHeval2|by apply Val.join_left].
 }
-{ s. unfold MId.bind.
-match goal with [|- context[if ?c then _ else _]] => destruct c end
-; [apply False_ind; eapply itv_non_bot; [by apply IHHeval1|by apply e]|].
-match goal with [|- context[if ?c then _ else _]] => destruct c end
-; [by apply IHHeval2|].
-match goal with [|- context[if ?c then _ else _]] => destruct c end
-; [elim f1; apply eval_zero; by apply IHHeval1|].
-eapply val_g_monotone; [by apply IHHeval2|by apply Val.join_right].
+{ s. unfold MId.bind, MId.ret.
+  destruct (Itv.eq_dec (itv_of_val (eval Strong cn e1 abs_m)) Itv.bot) as [Hbot|Hbot].
+  - exfalso. eapply val_g_z_itv_non_bot; [by apply IHHeval1|by apply Hbot].
+  - destruct (Itv.eq_dec (itv_of_val (eval Strong cn e1 abs_m)) Itv.zero) as [Hzero|Hzero].
+    + by apply IHHeval2.
+    + destruct (~~ Itv.le_dec Itv.zero (itv_of_val (eval Strong cn e1 abs_m))) as [Hnle|_].
+      * elim Hnle. by apply Itv.false_itv1, val_g_z_gamma.
+      * eapply val_g_monotone; [by apply IHHeval2|by apply Val.join_right].
 }
 { s. unfold MId.bind, MId.ret.
   rewrite Hl in IHHeval. inversion_clear IHHeval.
-- apply Val_g_loc. rewrite Hl'. simpl in *. by apply Hl0.
-- rewrite Hl'. apply Val_g_ab.
-  eapply cor_cast; [by apply Ho'|by apply Hsz'|by apply Hl0].
+  - apply Val_g_loc. rewrite Hl'. simpl in *. by apply Hl0.
+  - rewrite Hl'. unfold modify_array, DomAbs.array_of_val.
+    apply Val_g_ab. eapply cor_cast; [by apply Ho'|by apply Hsz'|by apply Hl0].
 }
 { s. constructor. eapply cor_eval_lv; [by apply Hm|by apply Hl]. }
 { s. constructor. eapply cor_eval_lv; [by apply Hm|by apply Hl]. }
 
 induction 2.
 { s. eapply cor_resolve_offset; [by apply Hm|by apply Ho|].
-constructor. apply PowLoc.singleton_1. by apply Loc.eq_refl. }
+  constructor. apply PowLoc.singleton_1. by apply Loc.eq_refl. }
 { s. eapply cor_resolve_offset; [by apply Hm|by apply Ho|].
-constructor. apply PowLoc.singleton_1. by apply Loc.eq_refl. }
+  constructor. apply PowLoc.singleton_1. by apply Loc.eq_refl. }
 { s. eapply cor_resolve_offset; [by apply Hm|by apply Ho|].
-eapply cor_eval; [by apply Hm|by apply Hv]. }
+  eapply cor_eval; [by apply Hm|by apply Hv]. }
 
 induction 2; i.
 { s. apply cor_deref_of_val. by apply Hl. }
 { s. eapply IHHres. constructor. eapply cor_append_field. by apply Hl. }
-{ s. eapply IHHres.
-rewrite Hl'. apply cor_plus_offset_val.
-- eapply cor_mem_lookup.
-  + apply cor_deref_of_val; by apply Hl0.
-  + rewrite <- Hl; by apply Hm0.
-  + by apply Hm.
-- assert (Val_g (DomCon.val_of_z idx) (SemEval.eval Strong cn e abs_m)) as Hval_g
-  ; [eapply cor_eval; [by apply Hm|by apply Hv]|].
-  inversion Hval_g; subst. by apply Hz.
+{ s. unfold MId.bind, MId.ret.
+  eapply IHHres.
+  rewrite Hl'. eapply cor_plus_offset_val.
+  - eapply val_g_z_gamma. eapply cor_eval; [by apply Hm|by apply Hv].
+  - eapply cor_mem_lookup.
+    + apply cor_deref_of_val; by apply Hl0.
+    + rewrite <- Hl; by apply Hm0.
+    + by apply Hm.
 }
+Qed.
+
+Lemma gamma_zero_pos :
+  forall z (Hz : 0 <= z), Itv.gamma z Itv.zero_pos.
+Proof.
+intros. unfold Itv.zero_pos, Itv.of_lb.
+constructor; constructor; lia.
+Qed.
+
+Lemma gamma_singleton_le :
+  forall z i (Hz : Itv.gamma z i), Itv.le (Itv.of_int z) i.
+Proof.
+intros. inversion Hz; subst. unfold Itv.of_int. constructor; by auto.
+Qed.
+
+Lemma gamma_meet :
+  forall z i1 i2 (H1 : Itv.gamma z i1) (H2 : Itv.gamma z i2),
+    Itv.gamma z (Itv.meet i1 i2).
+Proof.
+i. eapply Itv.gamma_monotone; [by apply Itv.cor_of_int|].
+apply Itv.meet_glb; by apply gamma_singleton_le.
+Qed.
+
+Lemma le_int_minus_one :
+  forall x y ub (Hlt : x < y) (Hy : Itv.le' (Itv.Int y) ub),
+    Itv.le' (Itv.Int x) (Itv.minus'_one ub).
+Proof.
+intros. destruct ub; simpl in *; inversion Hy; subst; constructor; lia.
+Qed.
+
+Lemma le_plus_one_int :
+  forall x y lb (Hlt : y < x) (Hy : Itv.le' lb (Itv.Int y)),
+    Itv.le' (Itv.plus'_one lb) (Itv.Int x).
+Proof.
+intros. destruct lb; simpl in *; inversion Hy; subst; constructor; lia.
+Qed.
+
+Lemma gamma_prune_lt :
+  forall x y xi yi
+     (Hlt : x < y) (Hx : Itv.gamma x xi) (Hy : Itv.gamma y yi),
+    Itv.gamma x (SemPrune.itv_prune Syn.Lt xi yi).
+Proof.
+i. unfold SemPrune.itv_prune.
+inversion Hx; subst; inversion Hy; subst.
+eapply Itv.gamma_monotone; [by apply Itv.cor_of_int|].
+unfold Itv.of_int. apply Itv.le_gen_itv_right.
+- by apply Hle1.
+- apply Itv.min'3; [by apply Hle2|].
+  by eapply (@le_int_minus_one x y ub0).
+Qed.
+
+Lemma gamma_prune_gt :
+  forall x y xi yi
+     (Hgt : x > y) (Hx : Itv.gamma x xi) (Hy : Itv.gamma y yi),
+    Itv.gamma x (SemPrune.itv_prune Syn.Gt xi yi).
+Proof.
+i. unfold SemPrune.itv_prune.
+inversion Hx; subst; inversion Hy; subst.
+eapply Itv.gamma_monotone; [by apply Itv.cor_of_int|].
+unfold Itv.of_int. apply Itv.le_gen_itv_right.
+- apply Itv.max'3; [by apply Hle1|].
+  eapply (@le_plus_one_int x y lb0); [lia|by apply Hle0].
+- by apply Hle2.
+Qed.
+
+Lemma gamma_prune_le :
+  forall x y xi yi
+     (Hle : x <= y) (Hx : Itv.gamma x xi) (Hy : Itv.gamma y yi),
+    Itv.gamma x (SemPrune.itv_prune Syn.Le xi yi).
+Proof.
+i. unfold SemPrune.itv_prune.
+inversion Hx; subst; inversion Hy; subst.
+eapply Itv.gamma_monotone; [by apply Itv.cor_of_int|].
+unfold Itv.of_int. apply Itv.le_gen_itv_right.
+- by apply Hle1.
+- apply Itv.min'3; [by apply Hle2|].
+  eapply Itv.le'_trans; [|by apply Hle3]. constructor; lia.
+Qed.
+
+Lemma gamma_prune_ge :
+  forall x y xi yi
+     (Hge : x >= y) (Hx : Itv.gamma x xi) (Hy : Itv.gamma y yi),
+    Itv.gamma x (SemPrune.itv_prune Syn.Ge xi yi).
+Proof.
+i. unfold SemPrune.itv_prune.
+inversion Hx; subst; inversion Hy; subst.
+eapply Itv.gamma_monotone; [by apply Itv.cor_of_int|].
+unfold Itv.of_int. apply Itv.le_gen_itv_right.
+- apply Itv.max'3; [by apply Hle1|].
+  eapply Itv.le'_trans; [by apply Hle0|]. constructor; lia.
+- by apply Hle2.
+Qed.
+
+Lemma gamma_prune_eq :
+  forall x xi yi (Hx : Itv.gamma x xi) (Hy : Itv.gamma x yi),
+    Itv.gamma x (SemPrune.itv_prune Syn.Eq xi yi).
+Proof.
+i. unfold SemPrune.itv_prune.
+inversion Hx; subst; inversion Hy; subst.
+by apply gamma_meet.
+Qed.
+
+Lemma itv_prune_sound :
+  forall op x y z xi yi
+     (Hb : SemCon.Eval_bop op (DomCon.val_of_z x) (DomCon.val_of_z y) (DomCon.val_of_z z))
+     (Hnz : z <> 0)
+     (Hx : Itv.gamma x xi) (Hy : Itv.gamma y yi),
+    Itv.gamma x (SemPrune.itv_prune op xi yi).
+Proof.
+inversion 1; subst; i.
+all: try solve
+  [ unfold SemPrune.itv_prune
+  ; destruct xi; [destruct yi|]; simpl
+  ; try assumption; try inversion Hx; try inversion Hy ].
+- by eapply (@gamma_prune_lt x y xi yi).
+- by exfalso; apply Hnz.
+- by eapply (@gamma_prune_gt x y xi yi).
+- by exfalso; apply Hnz.
+- by eapply (@gamma_prune_le x y xi yi).
+- by exfalso; apply Hnz.
+- by eapply (@gamma_prune_ge x y xi yi).
+- by exfalso; apply Hnz.
+- subst. by apply gamma_prune_eq.
+- by exfalso; apply Hnz.
+Qed.
+
+Lemma val_g_modify_prune :
+  forall op x y z xv yv
+     (Hb : SemCon.Eval_bop op (DomCon.val_of_z x) (DomCon.val_of_z y) (DomCon.val_of_z z))
+     (Hnz : z <> 0)
+     (Hx : Val_g (DomCon.val_of_z x) xv)
+     (Hy : Val_g (DomCon.val_of_z y) yv),
+    Val_g (DomCon.val_of_z x)
+          (modify_itv xv
+             (SemPrune.itv_prune op (itv_of_val xv) (itv_of_val yv))).
+Proof.
+i. unfold modify_itv. apply Val_g_z.
+eapply itv_prune_sound; [by apply Hb|by apply Hnz| |].
+- by apply val_g_z_gamma.
+- by apply val_g_z_gamma.
+Qed.
+
+Lemma cor_prune :
+  forall g step cn cid callee m d e z abs_m
+     (Hmem_g : Mem_g (cid, callee, m, d) abs_m)
+     (Heval : SemCon.Eval_exp step cn cid m e (DomCon.val_of_z z))
+     (Hnz : z <> 0)
+     (Hwf : SemCon.wf_non_rec_mem g m),
+    Mem_g (cid, callee, m, d) (RunOnly.SemPrune.prune g Strong cn e abs_m).
+Proof.
+i. unfold RunOnly.SemPrune.prune.
+destruct e; try by apply Hmem_g.
+destruct e1; try by apply Hmem_g.
+match goal with
+| lv : Syn.lval |- _ => destruct lv as [lh ofs lpos]
+end.
+destruct lh as [x is_global|]; try by apply Hmem_g.
+destruct ofs; try by apply Hmem_g.
+unfold MId.bind, MId.ret.
+inversion Heval; subst.
+inversion Hv1; subst.
+assert (Hx_abs :
+          Val_g v1
+                (mem_lookup
+                   (PowLoc.singleton (SemEval.eval_var cn x is_global))
+                   abs_m)).
+{ eapply cor_mem_lookup; [|by apply Hm|by apply Hmem_g].
+  destruct is_global; inversion Hl; subst; inversion Ho; subst
+  ; apply PowLoc.singleton_1; by apply Loc.eq_refl. }
+assert (Hy_abs : Val_g v2 (eval Strong cn e2 abs_m)).
+{ eapply cor_eval; [by apply Hmem_g|by apply Hv2]. }
+assert
+  (Hprune_abs :
+     Val_g v1
+       (modify_itv
+          (mem_lookup (PowLoc.singleton (SemEval.eval_var cn x is_global)) abs_m)
+          (SemPrune.itv_prune b
+             (itv_of_val
+                (mem_lookup
+                   (PowLoc.singleton (SemEval.eval_var cn x is_global))
+                   abs_m))
+             (itv_of_val (eval Strong cn e2 abs_m))))).
+{ inversion Hb; subst; try (by exfalso; apply Hnz).
+  all: try (eapply val_g_modify_prune
+            ; [by econstructor; eauto|by apply Hnz|by apply Hx_abs|by apply Hy_abs]).
+}
+destruct is_global; inversion Hl; subst; inversion Ho; subst.
+- eapply cor_update'
+  with (l := DomCon.loc_of_gvar x DomCon.Fields.nil)
+       (l' := SemEval.eval_var cn x true)
+  ; [ by apply Loc.eq_refl
+    | by apply Hprune_abs
+    | by apply Hmem_g
+    | reflexivity
+    | symmetry; by apply DomCon.M.P.F.find_mapsto_iff
+    | by apply Hwf ].
+- eapply cor_update'
+  with (l := DomCon.loc_of_lvar cid (InterNode.get_pid cn) x DomCon.Fields.nil)
+       (l' := SemEval.eval_var cn x false)
+  ; [ by apply Loc.eq_refl
+    | by apply Hprune_abs
+    | by apply Hmem_g
+    | reflexivity
+    | symmetry; by apply DomCon.M.P.F.find_mapsto_iff
+    | by apply Hwf ].
 Qed.
 
 Lemma cor_eval_alloc' :
@@ -912,6 +1132,13 @@ unfold loc_of_allocsite, allocsite_of_node.
 apply PowLoc.singleton_1; by apply Loc.eq_refl.
 Qed.
 
+Lemma cor_eval_string_val :
+  forall s z (Hz : 0 <= z),
+    Val_g (DomCon.val_of_z z) (SemEval.eval_string s).
+Proof.
+i. unfold SemEval.eval_string. apply Val_g_z. by apply gamma_zero_pos.
+Qed.
+
 Lemma cor_eval_string :
   forall g cn s step sz cid callee d m m' abs_m
      base o (Hbase : base = DomCon.loc_of_alloc step (DomCon.Allocsite.Inl cn) (o, sz, 1%Z) DomCon.Fields.nil)
@@ -927,13 +1154,14 @@ induction s.
 - i; inversion_clear Hinit; subst.
   eapply cor_wupdate; [| |by apply Hmem_g|reflexivity|reflexivity].
   + apply DomBasic.PowLoc.singleton_1; by apply Loc.eq_refl.
-  + constructor; constructor; [constructor; lia|by constructor].
+  + apply cor_eval_string_val. lia.
 - i; inversion Hinit; subst. inversion Hl; subst.
   eapply mem_g_mor; [reflexivity|by apply mem_wupdate_double|].
   eapply IHs; [reflexivity|by apply Htl|].
   eapply cor_wupdate; [| |by apply Hmem_g|reflexivity|reflexivity].
   + apply DomBasic.PowLoc.singleton_1; by apply Loc.eq_refl.
-  + constructor; constructor; [constructor; lia|by constructor].
+  + unfold SemCon.val_of_ascii. apply cor_eval_string_val.
+    apply Zle_0_nat.
 Qed.
 
 Lemma cor_eval_string_loc :
@@ -977,173 +1205,6 @@ eapply val_g_monotone; [by apply Hs'|].
 apply mem_find_mem_lookup. apply PowLoc.singleton_1. by apply Loc.eq_refl.
 Qed.
 
-Lemma cor_modify_itv :
-  forall v z abs_v itv_v (Hv : v = DomCon.val_of_z z) (Hz : Itv_g z itv_v),
-    Val_g v (DomAbs.modify_itv abs_v itv_v).
-Proof. i; unfold DomAbs.modify_itv; subst; by apply Val_g_z. Qed.
-
-Lemma Itv_g_mor :
-  forall z i1 i2 (Hz : Itv_g z i1) (Hi : Itv.eq i1 i2), Itv_g z i2.
-Proof.
-inversion 1; subst; inversion 1; subst; constructor.
-- apply Itv.le'_trans with lb.
-Abort.
-
-Lemma cor_gen_itv :
-  forall z lb ub (Hlb : Itv.le' lb (Itv.Int z)) (Hub : Itv.le' (Itv.Int z) ub)
-     (lb_c : Itv.eq' lb Itv.PInf -> False) (ub_c : Itv.eq' ub Itv.MInf -> False),
-    Itv_g z (Itv.gen_itv lb ub).
-Proof.
-i. unfold Itv.gen_itv.
-destruct (Itv.le'_dec lb ub)
-; [|elim f; by apply Itv.le'_trans with (Itv.Int z)].
-destruct lb; [|elim lb_c; by apply Itv.eq'_refl|].
-- destruct ub; [| |by inversion l]; by constructor.
-- destruct ub; [| |elim ub_c; by apply Itv.eq'_refl]; by constructor.
-Qed.
-
-Lemma cor_minus'_one :
-  forall z1 z2 ub (Hz : (z1 < z2)%Z) (Hub : Itv.le' (Itv.Int z2) ub),
-    Itv.le' (Itv.Int z1) (Itv.minus'_one ub).
-Proof.
-inversion 2; subst; simpl Itv.minus'_one.
-- by constructor.
-- constructor; lia.
-Qed.
-
-Lemma cor_plus'_one :
-  forall z1 z2 lb (Hz : (z1 < z2)%Z) (Hub : Itv.le' lb (Itv.Int z1)),
-    Itv.le' (Itv.plus'_one lb) (Itv.Int z2).
-Proof.
-inversion 2; subst; simpl Itv.plus'_one.
-- by constructor.
-- constructor; lia.
-Qed.
-
-Lemma Itv_eq_min :
-  forall a b c (Hle : Itv.eq' (Itv.min' a b) c), Itv.eq' a c \/ Itv.eq' b c.
-Proof. i. unfold Itv.min' in Hle. destruct (Itv.le'_dec a b); by auto. Qed.
-
-Lemma Itv_eq_max :
-  forall a b c (Hle : Itv.eq' (Itv.max' a b) c), Itv.eq' a c \/ Itv.eq' b c.
-Proof. i. unfold Itv.max' in Hle. destruct (Itv.le'_dec a b); by auto. Qed.
-
-Lemma Itv_eq_min_minf :
-  forall a (Ha : Itv.eq' (Itv.minus'_one a) Itv.MInf), Itv.eq' a Itv.MInf.
-Proof.
-destruct a; i; [by inversion Ha|by inversion Ha|by apply Itv.eq'_refl].
-Qed.
-
-Lemma Itv_eq_max_pinf :
-  forall a (Ha : Itv.eq' (Itv.plus'_one a) Itv.PInf), Itv.eq' a Itv.PInf.
-Proof.
-destruct a; i; [by inversion Ha|by apply Itv.eq'_refl|by inversion Ha].
-Qed.
-
-Lemma Itv_g_meet :
-  forall z x y (Hx : Itv_g z x) (Hy : Itv_g z y), Itv_g z (Itv.meet x y).
-Proof.
-inversion 1; inversion 1; subst. unfold Itv.meet.
-dest_if_dec. dest_if_dec.
-apply cor_gen_itv.
-- by apply Itv.max'3.
-- by apply Itv.min'3.
-- intro Heq; apply Itv_eq_max in Heq; destruct Heq
-  ; [by elim lb_c|by elim lb_c0].
-- intro Heq; apply Itv_eq_min in Heq; destruct Heq
-  ; [by elim ub_c|by elim ub_c0].
-Qed.
-
-Lemma cor_itv_prune :
-  forall b z z0 i v2 abs_v2
-    (Hprune : z <> 0%Z) (Hz : Itv_g z0 i)
-    (Hb : SemCon.Eval_bop b (inl (inl z0)) v2 (DomCon.val_of_z z))
-    (Habs_v2 : Val_g v2 abs_v2),
-  Itv_g z0 (SemPrune.itv_prune b i (DomAbs.itv_of_val abs_v2)).
-Proof.
-i; inversion Hb; subst
-; try (unfold SemPrune.itv_prune
-     ; inversion Hz; subst; inversion Habs_v2; subst; inversion Hz0; subst
-     ; s; by auto)
-; try (unfold SemPrune.itv_prune
-       ; inversion Hz; subst; inversion Habs_v2; subst; inversion Hz1; subst
-       ; s; by auto)
-; unfold SemPrune.itv_prune
-; inversion Hz; subst; clear Hz
-; inversion Habs_v2; subst; clear Habs_v2
-; inversion Hz; subst; clear Hz; s.
-- apply cor_gen_itv.
-  + by auto.
-  + apply Itv.min'3.
-    * by auto.
-    * eapply cor_minus'_one; [by apply Hlt|by auto].
-  + by auto.
-  + intro Hminf; apply Itv_eq_min in Hminf; elim Hminf
-    ; [by auto|intro Hminf'; by apply Itv_eq_min_minf in Hminf'].
-- apply cor_gen_itv.
-  + apply Itv.max'3.
-    * by auto.
-    * eapply cor_plus'_one with z2; [lia|by auto].
-  + by auto.
-  + intro Hpinf; apply Itv_eq_max in Hpinf; elim Hpinf
-    ; [by auto|intro Hpinf'; by apply Itv_eq_max_pinf in Hpinf'].
-  + by auto.
-- apply cor_gen_itv.
-  + by auto.
-  + apply Itv.min'3.
-    * by auto.
-    * apply Itv.le'_trans with (Itv.Int z2); [by constructor|by auto].
-  + by auto.
-  + intro Hminf; apply Itv_eq_min in Hminf; elim Hminf; by auto.
-- apply cor_gen_itv.
-  + apply Itv.max'3.
-    * by auto.
-    * apply Itv.le'_trans with (Itv.Int z2); [by auto|constructor; lia].
-  + by auto.
-  + intro Hpinf; apply Itv_eq_max in Hpinf; elim Hpinf; by auto.
-  + by auto.
-- unfold DomAbs.itv_of_val. apply Itv_g_meet.
-  + by auto.
-  + by constructor.
-Qed.
-
-Lemma cor_prune :
-  forall g step cn abs_m abs_m' cid m d
-     (Hmem_g : Mem_g (cid, None, m, d) abs_m)
-     e z (Hv : SemCon.Eval_exp step cn cid m e (DomCon.val_of_z z))
-     (Hprune : z <> 0%Z)
-     (HAbs : abs_m' = SemPrune.prune g Strong cn e abs_m)
-     (Hwf : SemCon.wf_non_rec_mem g m),
-    Mem_g (cid, None, m, d) abs_m'.
-Proof.
-unfold SemPrune.prune; i.
-destruct e; try (subst; by apply Hmem_g).
-destruct e1; try (subst; by apply Hmem_g).
-destruct lv; try (subst; by apply Hmem_g).
-destruct lh; try (subst; by apply Hmem_g).
-destruct o; try (subst; by apply Hmem_g).
-subst. unfold MId.bind.
-inversion_clear Hv. inversion_clear Hv1.
-eapply cor_update' with (l:=l) (v:=v1); [| | |reflexivity| |]
-; [ inversion Hl; subst; inversion Ho; subst; by apply Loc.eq_refl
-  | | by auto
-  | symmetry; by apply DomCon.M.P.F.find_mapsto_iff
-  | by auto ].
-remember (SemPrune.SemMem.mem_lookup
-          (DomBasic.PowLoc.singleton
-             (SemPrune.SemEval.eval_var cn x is_global)) abs_m) as abs_v1.
-assert (Val_g v1 abs_v1) as Habs_v1.
-{ rewrite Heqabs_v1; eapply cor_mem_lookup; [|by apply Hm|by apply Hmem_g]
-  ; inversion Hl; subst; inversion Ho; subst; s
-  ; by apply DomBasic.PowLoc.singleton_1, Loc.eq_refl. }
-remember (SemPrune.SemEval.eval Strong cn e2 abs_m) as abs_v2.
-assert (Val_g v2 abs_v2) as Habs_v2.
-{ rewrite Heqabs_v2; eapply cor_eval; [by apply Hmem_g|by apply Hv2]. }
-inversion Habs_v1; try (by constructor).
-eapply cor_modify_itv; [reflexivity|].
-eapply cor_itv_prune; [by apply Hprune|by apply Hz|subst; by apply Hb|by auto].
-Qed.
-
 Lemma cor_update_rets :
   forall cn cid m d step callee callees ret_opt l_opt abs_m abs_m'
          (Hcallee : PowProc.mem callee callees = true)
@@ -1164,7 +1225,7 @@ i. subst. unfold update_rets, MId.bind, MId.ret. split.
   (m := abs_m)
   (l' := match ret_opt with
          | Some ret_lv =>
-           SemPrune.SemEval.eval_lv Strong cn ret_lv abs_m
+           SemEval.eval_lv Strong cn ret_lv abs_m
          | None => DomBasic.PowLoc.bot
          end).
   + by apply Habs.
@@ -1180,19 +1241,23 @@ i. subst. unfold update_rets, MId.bind, MId.ret. split.
       eapply Val.le_trans; [|by apply Val.join_right].
       apply Val.le_refl, Mem.find_mor; [by auto|by apply Mem.eq_refl].
     * rewrite Mem.weak_add_diff; [by apply Val.le_refl, Val.eq_refl|by auto].
-  + destruct ret_opt; [|by apply Val.bot_prop].
-    generalize
-      (SemPrune.SemEval.eval_lv Strong cn l abs_m) as v
-    ; i.
-    apply PowLoc.fold_1 with (e:=loc_of_proc callee).
-    * apply SMProcLoc.map_1; [by apply DomBasic.loc_of_proc_mor|by auto].
-    * i.
-      eapply Val.le_trans
-      ; [ by apply Val.join_left
-        | by apply Val.le_refl, Mem.weak_add_prop, Loc.eq_refl ].
-    * i; s. destruct (Loc.eq_dec (loc_of_proc callee) e').
-      { eapply Val.le_trans
-        ; [by apply Val.join_left|by apply Val.le_refl, Mem.weak_add_prop]. }
+	  + destruct ret_opt; [|by apply Val.bot_prop].
+	    apply PowLoc.fold_1 with (e:=loc_of_proc callee).
+	    * apply SMProcLoc.map_1; [by apply DomBasic.loc_of_proc_mor|by auto].
+	    * i.
+	      eapply Val.le_trans
+	      with (y := Val.join (DomAbs.val_of_pow_loc
+	                             (SemEval.eval_lv Strong cn l abs_m))
+	                             (Mem.find (loc_of_proc callee) x))
+	      ; [ by apply Val.join_left
+	        | apply Val.le_refl; apply Mem.weak_add_prop; by apply Loc.eq_refl ].
+	    * i; s. destruct (Loc.eq_dec (loc_of_proc callee) e').
+	      { eapply Val.le_trans
+	        with (y := Val.join (DomAbs.val_of_pow_loc
+	                               (SemEval.eval_lv Strong cn l abs_m))
+	                              (Mem.find e' x))
+	        ; [by apply Val.join_left
+	          | apply Val.le_refl; apply Mem.weak_add_prop; by auto]. }
       { rewrite Mem.weak_add_diff; by auto. }
     * i. eapply Val.le_trans; [by apply He0|].
       apply Mem.find_mor'; [by apply Loc.eq_refl|].
@@ -1201,7 +1266,6 @@ i. subst. unfold update_rets, MId.bind, MId.ret. split.
         | by apply Val.le_refl, Val.eq_refl
         | by apply Mem.le_refl, Mem.eq_refl ].
 } Qed.
-
 
 Inductive Val_g_list : list DomCon.val_t -> list Val.t -> Prop :=
 | Val_g_list_nil : Val_g_list nil nil
@@ -1318,7 +1382,7 @@ Lemma correct_run :
     (HCon : SemCon.Run g step cn cmd con_s con_s')
     (HAbs : abs_m' = run_only Strong g cn cmd abs_m),
     Mem_g con_s' abs_m'.
-Proof. {
+Proof.
 destruct 2.
 { simpl run_only; i; unfold MId.bind in HAbs; subst abs_m'; destruct lv, lh, o
   ; try (eapply cor_update with (l:=l) (g:=g)
@@ -1357,9 +1421,8 @@ eapply cor_wupdate
 - unfold DomCon.val_of_proc, DomAbs.val_of_pow_proc.
   apply Val_g_proc. by apply PowProc.singleton_1.
 }
-{ simpl run_only. i.
-  eapply cor_prune
-  ; [by apply Hmem_g|by apply Hv|by apply Hprune|by apply HAbs|by apply Hwf].
+{ simpl run_only. i. rewrite HAbs.
+  eapply cor_prune; [by apply Hmem_g|by apply Hv|by apply Hprune|by apply Hwf].
 }
 { unfold run_only, run, MId.bind, MId.ret. i.
 remember (Global.G.is_undef_e f g) as ud; destruct ud; [discriminate|].
@@ -1367,8 +1430,7 @@ rewrite HAbs. clear HAbs Hf_def Hequd.
 eapply cor_bind_args
 with (callees := powProc_of_val (eval Strong cn f abs_m))
 ; [|by apply Hargs_p|by apply Hbind| | |reflexivity].
-- eapply cor_update_rets;
-  [|by apply Hret|by apply Hmem_g|reflexivity].
+- eapply cor_update_rets; [|by apply Hret|by apply Hmem_g|reflexivity].
   exploit cor_eval; [by apply Hmem_g|by apply Hf|].
   i. inversion x0; subst.
   assert (RunOnly.eval = eval) as eval'; [reflexivity|by rewrite eval', <- H].
@@ -1387,4 +1449,4 @@ eapply weaken_mem_g. by apply Hmem_g.
 }
 { simpl run_only. i. by rewrite HAbs. }
 { simpl run_only. i. by rewrite HAbs. }
-} Qed.
+Qed.

@@ -5,8 +5,13 @@
  *)
 Require Import UserProofType.
 Require SemProof AccProof.
+Require UserInput InputSanity.
 
-Module AllProof : PINPUT.
+(* Keep AllProof transparent so InputSanity can see the concrete INPUT. *)
+Module AllProof.
 Include SemProof.
 Include AccProof.
 End AllProof.
+
+Module _AllProofTypeCheck : PINPUT := AllProof.
+Module _InputSanity := InputSanity.Make UserInput.Input AllProof.
