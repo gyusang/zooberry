@@ -5,6 +5,8 @@
 -R ItvProof ItvProof
 -R TntInput TntInput
 -R TntProof TntProof
+-R IntrInput IntrInput
+-R IntrProof IntrProof
 
 Basic/Access.v
 Basic/AlarmType.v
@@ -61,6 +63,22 @@ ItvInput/UserInput.v
 ItvProof/AccProof.v
 ItvProof/AllProof.v
 ItvProof/SemProof.v
+
+IntrInput/DomArrayBlk.v
+IntrInput/DomBasic.v
+IntrInput/DomIntr.v
+IntrInput/DomAbs.v
+IntrInput/DomMem.v
+IntrInput/Query.v
+IntrInput/SemAbs.v
+IntrInput/SemEval.v
+IntrInput/SemMem.v
+IntrInput/SemPrune.v
+IntrInput/UserInput.v
+
+IntrProof/AccProof.v
+IntrProof/AllProof.v
+IntrProof/SemProof.v
 
 Proof/CorFin.v
 Proof/CorInsenLocal.v

@@ -47,6 +47,7 @@ Options
 SpecName
   Itv          Interval analysis
   Tnt          Taint analysis
+  Intr         Interrupt-aware interval analysis
 EOF
 exit 0
 }

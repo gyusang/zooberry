@@ -1,20 +1,20 @@
 # Copyright (c) 2017-present,
 # Programming Research Laboratory (ROPAS), Seoul National University, Korea
 # This software is distributed under the term of the BSD-3 clause license.
-SPECS := Itv Tnt
-SPEC_DIRS := ItvInput TntInput
-PROOF_DIRS := ItvProof TntProof
+SPECS := Itv Tnt Intr
+SPEC_DIRS := ItvInput TntInput IntrInput
+PROOF_DIRS := ItvProof TntProof IntrProof
 
 PROOF_CMDS := $(addsuffix _proof, $(SPECS))
 EXT_CMDS := $(addsuffix _ext, $(SPECS))
 
-COQ_GEN := *.glob *.vo *.v.d .*.aux Makefile.coq*
+COQ_GEN := *.glob *.vo *.vok *.vos *.v.d .*.aux Makefile.coq* .Makefile.coq*
 export COQ_GEN
 
 .PHONY: all basic proof $(SPEC_DIRS) $(PROOF_DIRS) $(PROOF_CMDS) $(EXT_CMDS) clean
 
 all:
-	echo "ERROR: `make Itv_proof` or `make Itv_ext`"
+	echo "ERROR: `make Itv_proof`, `make Tnt_proof`, or `make Intr_proof`"
 	exit(1)
 
 basic:

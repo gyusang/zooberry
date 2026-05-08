@@ -1,0 +1,18 @@
+(*
+ * Copyright (c) 2017-present,
+ * Programming Research Laboratory (ROPAS), Seoul National University, Korea
+ * This software is distributed under the term of the BSD-3 clause license.
+ *)
+Set Implicit Arguments.
+
+Require Monad DomBasic DomIntr DomAbs SemAbs Query.
+Require Import UserInputType.
+
+Module Input <: INPUT.
+  Include DomBasic.
+  Include DomIntr.
+  Include DomAbs.
+  Include DomMem.
+  Include SemAbs.
+  Include Query.
+End Input.
